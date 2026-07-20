@@ -119,6 +119,8 @@ zanryo doctor
 zanryo --json
 ```
 
+The default and JSON summaries include pace, sustainable pace, estimated depletion, confidence, and chart-ready forecast data once sufficient history exists.
+
 Source builds are available during early development. Installation instructions will be added with the first signed release.
 
 ## Development
@@ -176,7 +178,7 @@ Zanryo is currently in early implementation.
 - [x] Name and visual identity
 - [x] Rust workspace and protocol fixtures
 - [x] Local history
-- [ ] Forecast engine
+- [x] Forecast engine
 - [ ] Native macOS application
 - [ ] Packaging and first release
 - [ ] Linux shell
