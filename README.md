@@ -109,7 +109,7 @@ A GTK4 Linux shell is planned after the macOS implementation is validated.
 
 ## Commands
 
-The planned CLI surface is small:
+The initial CLI surface is intentionally small:
 
 ```console
 zanryo
@@ -119,7 +119,19 @@ zanryo doctor
 zanryo --json
 ```
 
-Installation instructions will be added when the first runnable build is available.
+Source builds are available during early development. Installation instructions will be added with the first signed release.
+
+## Development
+
+Rust stable, `rustfmt`, and Clippy are pinned through `rust-toolchain.toml`.
+
+```console
+cargo test --workspace
+cargo run -p zanryo -- doctor --json
+cargo run -p zanryo
+```
+
+Zanryo reads the authenticated local Codex app-server. It does not request or store your Codex credentials.
 
 ## Installation
 
@@ -152,7 +164,7 @@ The menu-bar item remains text only. Branding never competes with the number you
 
 ## Project status
 
-Zanryo is currently in the design and implementation-planning stage.
+Zanryo is currently in early implementation.
 
 - [x] Product scope
 - [x] macOS interaction model
@@ -161,8 +173,8 @@ Zanryo is currently in the design and implementation-planning stage.
 - [x] Forecast behavior
 - [x] Default theme
 - [x] Name and visual identity
-- [ ] Rust workspace and protocol fixtures
-- [ ] Local history
+- [x] Rust workspace and protocol fixtures
+- [x] Local history
 - [ ] Forecast engine
 - [ ] Native macOS application
 - [ ] Packaging and first release
