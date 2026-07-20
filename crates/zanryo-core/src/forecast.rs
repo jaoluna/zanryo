@@ -113,19 +113,53 @@ impl ForecastEngine {
         } else {
             None
         };
+        let total_span_hours = span_hours(&cleaned);
+        let residuals: Vec<f64> = cleaned
+            .iter()
+            .map(|sample| {
+                let days_before_latest = latest
+                    .observed_at
+                    .signed_duration_since(sample.observed_at)
+                    .num_seconds() as f64
+                    / SECONDS_PER_DAY;
+                let predicted = latest.remaining_percent + consumed_per_day * days_before_latest;
+                (sample.remaining_percent - predicted).abs()
+            })
+            .collect();
+        let mean_absolute_residual = residuals.iter().sum::<f64>() / residuals.len() as f64;
+        let rate_margin = (mean_absolute_residual / (total_span_hours / 24.0).max(0.25))
+            .max(consumed_per_day * 0.10)
+            .max(0.25);
+        let rate_range = ForecastRange {
+            low: (consumed_per_day - rate_margin).max(0.0),
+            high: consumed_per_day + rate_margin,
+        };
+        let relative_margin = rate_margin / consumed_per_day.max(MINIMUM_RATE);
+        let confidence =
+            if cleaned.len() >= 20 && total_span_hours >= 24.0 && relative_margin <= 0.25 {
+                ForecastConfidence::High
+            } else if cleaned.len() >= 6 && total_span_hours >= 6.0 && relative_margin <= 0.60 {
+                ForecastConfidence::Medium
+            } else {
+                ForecastConfidence::Low
+            };
+        let chart = build_chart(
+            &cleaned,
+            now,
+            latest.resets_at,
+            consumed_per_day,
+            &rate_range,
+        );
 
         ForecastReport {
             status: ForecastStatus::Estimated,
-            confidence: ForecastConfidence::Low,
+            confidence,
             consumed_per_day: Some(consumed_per_day),
             sustainable_per_day: Some(sustainable_per_day),
             pace_difference: Some(consumed_per_day - sustainable_per_day),
             estimated_depletion_at,
-            rate_range: None,
-            chart: ChartSeries {
-                observed: observed_points(&cleaned),
-                ..ChartSeries::default()
-            },
+            rate_range: Some(rate_range),
+            chart,
         }
     }
 }
@@ -246,5 +280,59 @@ fn observed_points(samples: &[&RateLimit]) -> Vec<ChartPoint> {
             at: sample.observed_at,
             remaining_percent: sample.remaining_percent,
         })
+        .collect()
+}
+
+fn build_chart(
+    samples: &[&RateLimit],
+    now: DateTime<Utc>,
+    reset: DateTime<Utc>,
+    rate: f64,
+    rate_range: &ForecastRange,
+) -> ChartSeries {
+    let latest = samples.last().expect("estimated history is non-empty");
+    let forecast = projection_times(now, reset)
+        .into_iter()
+        .map(|at| {
+            let days = at.signed_duration_since(now).num_seconds().max(0) as f64 / SECONDS_PER_DAY;
+            let remaining = (latest.remaining_percent - rate * days).clamp(0.0, 100.0);
+            let optimistic = (latest.remaining_percent - rate_range.low * days).clamp(0.0, 100.0);
+            let pessimistic = (latest.remaining_percent - rate_range.high * days).clamp(0.0, 100.0);
+            ForecastPoint {
+                at,
+                remaining_percent: remaining,
+                uncertainty: ForecastRange {
+                    low: pessimistic.min(remaining),
+                    high: optimistic.max(remaining),
+                },
+            }
+        })
+        .collect();
+    let sustainable = vec![
+        ChartPoint {
+            at: now,
+            remaining_percent: latest.remaining_percent,
+        },
+        ChartPoint {
+            at: reset,
+            remaining_percent: 0.0,
+        },
+    ];
+
+    ChartSeries {
+        observed: observed_points(samples),
+        forecast,
+        sustainable,
+    }
+}
+
+fn projection_times(now: DateTime<Utc>, reset: DateTime<Utc>) -> Vec<DateTime<Utc>> {
+    if reset <= now {
+        return vec![now];
+    }
+
+    let total_seconds = reset.signed_duration_since(now).num_seconds();
+    (0..=24)
+        .map(|step| now + chrono::Duration::seconds(total_seconds * i64::from(step) / 24))
         .collect()
 }

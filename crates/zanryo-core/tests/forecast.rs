@@ -94,3 +94,46 @@ fn excludes_other_cycles_spark_and_upward_corrections() {
     assert_eq!(report.status, ForecastStatus::Estimated);
     assert!((report.consumed_per_day.unwrap() - 64.0).abs() < 0.01);
 }
+
+#[test]
+fn builds_bounded_chart_series_and_sustainable_reference() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(2);
+    let samples = vec![
+        weekly(now - Duration::hours(24), 70.0, reset),
+        weekly(now - Duration::hours(12), 60.0, reset),
+        weekly(now, 50.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.chart.forecast.first().unwrap().at, now);
+    assert_eq!(report.chart.forecast.last().unwrap().at, reset);
+    assert_eq!(report.chart.sustainable.len(), 2);
+    assert_eq!(report.chart.sustainable[0].remaining_percent, 50.0);
+    assert_eq!(report.chart.sustainable[1].remaining_percent, 0.0);
+    assert!(report.chart.forecast.iter().all(|point| {
+        (0.0..=100.0).contains(&point.remaining_percent)
+            && point.uncertainty.low <= point.remaining_percent
+            && point.uncertainty.high >= point.remaining_percent
+    }));
+}
+
+#[test]
+fn confidence_increases_with_coverage_and_stable_residuals() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(5);
+    let samples: Vec<_> = (0..=24)
+        .map(|hour| {
+            let observed = now - Duration::hours(24 - hour);
+            weekly(observed, 90.0 - hour as f64, reset)
+        })
+        .collect();
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.confidence, ForecastConfidence::High);
+    let range = report.rate_range.unwrap();
+    assert!(range.low <= report.consumed_per_day.unwrap());
+    assert!(range.high >= report.consumed_per_day.unwrap());
+}
