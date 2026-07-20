@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/zanryo-core"]
+members = ["apps/zanryo-cli", "crates/zanryo-core"]
 
 [workspace.package]
 edition = "2024"
