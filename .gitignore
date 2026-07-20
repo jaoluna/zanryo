@@ -1,0 +1,11 @@
+.DS_Store
+.superpowers/
+target/
+.env
+.env.*
+!.env.example
+.Codex/session-state.json
+/MEMORY.md
+/docs/superpowers/
+/docs/design/screenshots/
+/docs/design/zanryo-macos-popover-approved.html
