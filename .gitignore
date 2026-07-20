@@ -10,3 +10,5 @@ target/
 /docs/superpowers/
 /docs/design/screenshots/
 /docs/design/zanryo-macos-popover-approved.html
+/apps/zanryo-macos/Zanryo.xcodeproj/
+/apps/zanryo-macos/Generated/

@@ -1,0 +1,67 @@
+name: Zanryo
+
+options:
+  bundleIdPrefix: io.joaoluna
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "14.0"
+
+configs:
+  Debug: debug
+  Release: release
+
+settings:
+  base:
+    ARCHS: arm64
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_VERSION: "6.0"
+
+targets:
+  Zanryo:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources
+    preBuildScripts:
+      - path: ../../scripts/build-rust-macos.sh
+        name: Build Rust bridge
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Generated"
+        INFOPLIST_FILE: Support/Info.plist
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Generated"
+        OTHER_LDFLAGS: "$(inherited) -lzanryo_bridge -liconv -framework CoreFoundation -lSystem -lc -lm"
+        PRODUCT_BUNDLE_IDENTIFIER: io.joaoluna.Zanryo
+        SWIFT_OBJC_BRIDGING_HEADER: Support/Zanryo-Bridging-Header.h
+  ZanryoTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Zanryo
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: NO
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: io.joaoluna.ZanryoTests
+
+schemes:
+  Zanryo:
+    build:
+      targets:
+        Zanryo: all
+        ZanryoTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ZanryoTests
