@@ -1,10 +1,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{Freshness, HistoryRepository, QuotaSnapshot, RateLimitSource, Result, ZanryoError};
+use crate::{
+    ForecastEngine, ForecastReport, Freshness, HistoryRepository, QuotaSnapshot, RateLimitSource,
+    Result, ZanryoError,
+};
 
 const HISTORY_RETENTION_DAYS: i64 = 90;
 
@@ -71,6 +74,13 @@ where
         } else {
             QuotaSnapshot::from_limits(limits, Freshness::Stale).map(Some)
         }
+    }
+
+    pub async fn forecast(&self, now: DateTime<Utc>) -> Result<ForecastReport> {
+        let history = self.history.clone();
+        let since = now - Duration::days(8);
+        let samples = run_history_task(move || history.limits_since(since)).await?;
+        Ok(ForecastEngine::calculate(&samples, now))
     }
 }
 

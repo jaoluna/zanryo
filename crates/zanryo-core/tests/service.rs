@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use chrono::{Duration, TimeZone, Utc};
 use tempfile::tempdir;
 use zanryo_core::{
-    Freshness, HistoryRepository, LimitKind, QuotaService, RateLimit, RateLimitSource, Result,
-    ZanryoError,
+    ForecastStatus, Freshness, HistoryRepository, LimitKind, QuotaService, RateLimit,
+    RateLimitSource, Result, ZanryoError,
 };
 
 struct FakeSource {
@@ -111,4 +111,38 @@ async fn concurrent_refreshes_share_one_source_read() {
     assert_eq!(first.unwrap().freshness, Freshness::Fresh);
     assert_eq!(second.unwrap().freshness, Freshness::Fresh);
     assert_eq!(reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn forecast_uses_persisted_weekly_history() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let reset = now + Duration::days(5);
+    let samples = vec![
+        RateLimit::new(
+            LimitKind::Weekly,
+            "codex",
+            80.0,
+            reset,
+            now - Duration::hours(2),
+        )
+        .unwrap(),
+        RateLimit::new(
+            LimitKind::Weekly,
+            "codex",
+            78.0,
+            reset,
+            now - Duration::hours(1),
+        )
+        .unwrap(),
+        RateLimit::new(LimitKind::Weekly, "codex", 76.0, reset, now).unwrap(),
+    ];
+    history.insert_limits(&samples).unwrap();
+    let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history);
+
+    let report = service.forecast(now).await.unwrap();
+
+    assert_eq!(report.status, ForecastStatus::Estimated);
+    assert!(report.consumed_per_day.is_some());
 }

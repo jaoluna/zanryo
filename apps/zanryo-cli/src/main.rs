@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use zanryo_core::{CodexAppServer, HistoryRepository, QuotaService, ZanryoError};
 
-use crate::output::{format_history, format_snapshot};
+use crate::output::{format_forecast, format_history, format_snapshot};
 
 type CliResult<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -61,11 +61,23 @@ async fn run(cli: Cli) -> CliResult<()> {
 async fn run_summary(json_output: bool) -> CliResult<()> {
     let service = build_service().await?;
     let snapshot = service.refresh().await?;
+    let now = Utc::now();
+    let forecast = service.forecast(now).await?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({
+                "quota": snapshot,
+                "forecast": forecast,
+            }))?
+        );
     } else {
-        println!("{}", format_snapshot(&snapshot, Utc::now()));
+        println!(
+            "{}\n{}",
+            format_snapshot(&snapshot, now),
+            format_forecast(&forecast, now)
+        );
     }
     Ok(())
 }
@@ -75,11 +87,23 @@ async fn run_watch(json_output: bool) -> CliResult<()> {
 
     loop {
         let snapshot = service.refresh().await?;
+        let now = Utc::now();
+        let forecast = service.forecast(now).await?;
         print!("\x1b[2J\x1b[H");
         if json_output {
-            println!("{}", serde_json::to_string_pretty(&snapshot)?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "quota": snapshot,
+                    "forecast": forecast,
+                }))?
+            );
         } else {
-            println!("{}", format_snapshot(&snapshot, Utc::now()));
+            println!(
+                "{}\n{}",
+                format_snapshot(&snapshot, now),
+                format_forecast(&forecast, now)
+            );
         }
         io::stdout().flush()?;
 
