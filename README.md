@@ -135,15 +135,16 @@ Zanryo reads the authenticated local Codex app-server. It does not request or st
 
 ## Installation
 
-The first public release will provide a signed and notarized macOS download.
+The first public release will provide a signed and notarized macOS download through GitHub Releases.
 
-Homebrew Cask is also planned:
+The long-term official Homebrew targets are:
 
 ```console
-brew install --cask joaoluna/tap/zanryo
+brew install zanryo
+brew install --cask zanryo
 ```
 
-This command is not live yet. The README will be updated when the first release artifact and tap are available.
+The first command installs the CLI on macOS or Linux. The second installs the macOS application and its bundled CLI. Neither command is live yet. The README will be updated only after the packages are accepted into the official Homebrew repositories.
 
 ## Visual direction
 
