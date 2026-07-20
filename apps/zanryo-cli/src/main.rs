@@ -60,23 +60,16 @@ async fn run(cli: Cli) -> CliResult<()> {
 
 async fn run_summary(json_output: bool) -> CliResult<()> {
     let service = build_service().await?;
-    let snapshot = service.refresh().await?;
     let now = Utc::now();
-    let forecast = service.forecast(now).await?;
+    let dashboard = service.refresh_dashboard(now).await?;
 
     if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "quota": snapshot,
-                "forecast": forecast,
-            }))?
-        );
+        println!("{}", serde_json::to_string_pretty(&dashboard)?);
     } else {
         println!(
             "{}\n{}",
-            format_snapshot(&snapshot, now),
-            format_forecast(&forecast, now)
+            format_snapshot(&dashboard.quota, now),
+            format_forecast(&dashboard.forecast, now)
         );
     }
     Ok(())
@@ -86,23 +79,16 @@ async fn run_watch(json_output: bool) -> CliResult<()> {
     let service = build_service().await?;
 
     loop {
-        let snapshot = service.refresh().await?;
         let now = Utc::now();
-        let forecast = service.forecast(now).await?;
+        let dashboard = service.refresh_dashboard(now).await?;
         print!("\x1b[2J\x1b[H");
         if json_output {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "quota": snapshot,
-                    "forecast": forecast,
-                }))?
-            );
+            println!("{}", serde_json::to_string_pretty(&dashboard)?);
         } else {
             println!(
                 "{}\n{}",
-                format_snapshot(&snapshot, now),
-                format_forecast(&forecast, now)
+                format_snapshot(&dashboard.quota, now),
+                format_forecast(&dashboard.forecast, now)
             );
         }
         io::stdout().flush()?;

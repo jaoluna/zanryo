@@ -146,3 +146,26 @@ async fn forecast_uses_persisted_weekly_history() {
     assert_eq!(report.status, ForecastStatus::Estimated);
     assert!(report.consumed_per_day.is_some());
 }
+
+#[tokio::test]
+async fn refresh_dashboard_returns_matching_quota_and_forecast() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let source = FakeSource::succeeding(sample_limits());
+    let service = QuotaService::new(source, history);
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let dashboard = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(dashboard.quota.freshness, Freshness::Fresh);
+    assert_eq!(
+        dashboard.quota.weekly.remaining_percent,
+        dashboard
+            .forecast
+            .chart
+            .observed
+            .last()
+            .unwrap()
+            .remaining_percent
+    );
+}

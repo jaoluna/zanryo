@@ -1,3 +1,4 @@
+mod dashboard;
 mod error;
 mod forecast;
 mod history;
@@ -6,6 +7,7 @@ mod protocol;
 mod service;
 mod transport;
 
+pub use dashboard::{DashboardSnapshot, cached_dashboard};
 pub use error::{Result, ZanryoError};
 pub use forecast::{
     ChartPoint, ChartSeries, ForecastConfidence, ForecastEngine, ForecastPoint, ForecastRange,

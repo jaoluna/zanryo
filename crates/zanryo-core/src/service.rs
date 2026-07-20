@@ -5,8 +5,8 @@ use chrono::{DateTime, Duration, Utc};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    ForecastEngine, ForecastReport, Freshness, HistoryRepository, QuotaSnapshot, RateLimitSource,
-    Result, ZanryoError,
+    DashboardSnapshot, ForecastEngine, ForecastReport, Freshness, HistoryRepository, QuotaSnapshot,
+    RateLimitSource, Result, ZanryoError,
 };
 
 const HISTORY_RETENTION_DAYS: i64 = 90;
@@ -81,6 +81,12 @@ where
         let since = now - Duration::days(8);
         let samples = run_history_task(move || history.limits_since(since)).await?;
         Ok(ForecastEngine::calculate(&samples, now))
+    }
+
+    pub async fn refresh_dashboard(&self, now: DateTime<Utc>) -> Result<DashboardSnapshot> {
+        let quota = self.refresh().await?;
+        let forecast = self.forecast(now).await?;
+        Ok(DashboardSnapshot { quota, forecast })
     }
 }
 
