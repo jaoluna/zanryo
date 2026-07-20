@@ -17,4 +17,4 @@ pub use history::HistoryRepository;
 pub use model::{Freshness, LimitKind, QuotaSnapshot, RateLimit};
 pub use protocol::{decode_rate_limits, is_rate_limits_update};
 pub use service::QuotaService;
-pub use transport::{CodexAppServer, RateLimitSource};
+pub use transport::{CodexAppServer, RateLimitSource, resolve_codex_path};

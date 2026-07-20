@@ -1,16 +1,17 @@
 mod output;
 
-use std::env;
 use std::error::Error;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::Duration;
 
 use chrono::{Duration as ChronoDuration, Utc};
 use clap::{Parser, Subcommand};
 use serde_json::json;
-use zanryo_core::{CodexAppServer, HistoryRepository, QuotaService, ZanryoError};
+use zanryo_core::{
+    CodexAppServer, HistoryRepository, QuotaService, ZanryoError, resolve_codex_path,
+};
 
 use crate::output::{format_forecast, format_history, format_snapshot};
 
@@ -164,32 +165,6 @@ async fn build_service() -> CliResult<QuotaService<CodexAppServer>> {
     let source = CodexAppServer::spawn(codex_path).await?;
     let history = HistoryRepository::open_default()?;
     Ok(QuotaService::new(source, history))
-}
-
-fn resolve_codex_path() -> Option<PathBuf> {
-    if let Some(path) = env::var_os("CODEX_PATH").map(PathBuf::from) {
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-
-    if let Some(path) = env::var_os("PATH").and_then(|path| {
-        env::split_paths(&path)
-            .map(|directory| directory.join("codex"))
-            .find(|candidate| candidate.is_file())
-    }) {
-        return Some(path);
-    }
-
-    let bundled = env::current_exe()
-        .ok()
-        .and_then(|executable| executable.parent().map(|directory| directory.join("codex")));
-    if bundled.as_ref().is_some_and(|path| path.is_file()) {
-        return bundled;
-    }
-
-    let chatgpt = PathBuf::from("/Applications/ChatGPT.app/Contents/Resources/codex");
-    chatgpt.is_file().then_some(chatgpt)
 }
 
 fn codex_app_server_help_succeeds(path: &Path) -> bool {

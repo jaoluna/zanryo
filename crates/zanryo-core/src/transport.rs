@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -144,6 +145,32 @@ impl CodexAppServer {
     }
 }
 
+pub fn resolve_codex_path() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(explicit) = env::var_os("CODEX_PATH") {
+        candidates.push(PathBuf::from(explicit));
+    }
+    if let Some(path) = env::var_os("PATH") {
+        candidates.extend(env::split_paths(&path).map(|directory| directory.join("codex")));
+    }
+    if let Some(bundled) = env::current_exe()
+        .ok()
+        .and_then(|executable| executable.parent().map(|directory| directory.join("codex")))
+    {
+        candidates.push(bundled);
+    }
+    candidates.push(PathBuf::from(
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+    ));
+
+    first_existing_file(candidates)
+}
+
+fn first_existing_file(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates.into_iter().find(|candidate| candidate.is_file())
+}
+
 #[async_trait::async_trait]
 impl RateLimitSource for CodexAppServer {
     async fn read_rate_limits(&self) -> Result<Vec<RateLimit>> {
@@ -285,5 +312,19 @@ mod tests {
         assert_eq!(request["method"], "initialize");
         assert_eq!(request["params"]["clientInfo"]["name"], "zanryo");
         assert_eq!(request["params"]["capabilities"]["experimentalApi"], true);
+    }
+
+    #[test]
+    fn first_existing_file_keeps_candidate_precedence() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first-codex");
+        let second = directory.path().join("second-codex");
+        std::fs::write(&first, "").unwrap();
+        std::fs::write(&second, "").unwrap();
+
+        let selected =
+            first_existing_file([directory.path().join("missing"), first.clone(), second]);
+
+        assert_eq!(selected, Some(first));
     }
 }

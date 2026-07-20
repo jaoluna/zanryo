@@ -991,6 +991,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zanryo-bridge"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "zanryo-core",
+]
+
+[[package]]
 name = "zanryo-core"
 version = "0.1.0"
 dependencies = [
