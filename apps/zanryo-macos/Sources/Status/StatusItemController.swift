@@ -4,7 +4,7 @@ import AppKit
 final class StatusItemController: NSObject {
     private let statusBar: NSStatusBar
     private let statusItem: NSStatusItem
-    private let onToggle: (NSStatusBarButton) -> Void
+    private let onAction: (StatusItemAction, NSStatusBarButton, NSEvent?) -> Void
     private var isInvalidated = false
 
     var button: NSStatusBarButton? {
@@ -13,17 +13,18 @@ final class StatusItemController: NSObject {
 
     init(
         statusBar: NSStatusBar = .system,
-        onToggle: @escaping (NSStatusBarButton) -> Void
+        onAction: @escaping (StatusItemAction, NSStatusBarButton, NSEvent?) -> Void
     ) {
         self.statusBar = statusBar
         statusItem = statusBar.statusItem(withLength: NSStatusItem.variableLength)
-        self.onToggle = onToggle
+        self.onAction = onAction
         super.init()
 
         button?.target = self
-        button?.action = #selector(togglePopover)
-        button?.sendAction(on: [.leftMouseUp])
+        button?.action = #selector(performAction)
+        button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button?.toolTip = "Zanryo Codex quota"
+        statusItem.menu = nil
         update(StatusTitle.make(snapshot: nil))
     }
 
@@ -40,11 +41,20 @@ final class StatusItemController: NSObject {
         button?.setAccessibilityLabel(title.accessibilityLabel)
     }
 
+    func setHighlighted(_ isHighlighted: Bool) {
+        button?.highlight(isHighlighted)
+    }
+
     @objc
-    private func togglePopover() {
+    private func performAction() {
         guard let button else {
             return
         }
-        onToggle(button)
+        let event = NSApp.currentEvent
+        let action = StatusItemAction.resolve(
+            eventType: event?.type,
+            modifierFlags: event?.modifierFlags ?? []
+        )
+        onAction(action, button, event)
     }
 }

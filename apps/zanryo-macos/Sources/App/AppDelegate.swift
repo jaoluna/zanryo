@@ -16,8 +16,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bridge = try RustBridge()
             let store = ZanryoStore(provider: bridge)
             let popoverCoordinator = PopoverCoordinator(store: store)
-            let statusItemController = StatusItemController { [weak popoverCoordinator] button in
-                popoverCoordinator?.toggle(relativeTo: button)
+            let contextMenu = StatusItemContextMenu(
+                onRefresh: { Task { await store.refresh() } },
+                onQuit: { NSApp.terminate(nil) }
+            )
+            let statusItemController = StatusItemController { [weak popoverCoordinator] action, button, event in
+                guard let popoverCoordinator else {
+                    return
+                }
+
+                switch action {
+                case .togglePopover:
+                    popoverCoordinator.toggle(relativeTo: button)
+                case .showContextMenu:
+                    popoverCoordinator.close()
+                    contextMenu.show(
+                        for: button,
+                        event: event,
+                        isRefreshing: store.isRefreshing
+                    )
+                }
+            }
+            popoverCoordinator.onVisibilityChanged = { [weak statusItemController] isShown in
+                statusItemController?.setHighlighted(isShown)
             }
 
             self.store = store
@@ -28,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installRefreshTimer()
             Task { await store.start() }
         } catch {
-            let statusItemController = StatusItemController(onToggle: { _ in })
+            let statusItemController = StatusItemController(onAction: { _, _, _ in })
             statusItemController.update(StatusTitle.make(snapshot: nil))
             self.statusItemController = statusItemController
         }

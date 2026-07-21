@@ -2,13 +2,17 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class PopoverCoordinator {
+final class PopoverCoordinator: NSObject, NSPopoverDelegate {
     private let store: ZanryoStore
     private let popover: NSPopover
+    var onVisibilityChanged: ((Bool) -> Void)?
 
     init(store: ZanryoStore) {
         self.store = store
         popover = NSPopover()
+        super.init()
+
+        popover.delegate = self
         popover.behavior = .transient
         popover.animates = false
         popover.contentSize = NSSize(width: 360, height: 410)
@@ -19,7 +23,7 @@ final class PopoverCoordinator {
 
     func toggle(relativeTo button: NSStatusBarButton) {
         if popover.isShown {
-            popover.performClose(nil)
+            close()
             return
         }
 
@@ -28,6 +32,15 @@ final class PopoverCoordinator {
             of: button,
             preferredEdge: .minY
         )
+        onVisibilityChanged?(true)
         Task { await store.refresh() }
+    }
+
+    func close() {
+        popover.performClose(nil)
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        onVisibilityChanged?(false)
     }
 }
