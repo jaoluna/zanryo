@@ -94,6 +94,32 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(loading.footerText, "Loading Codex quota data")
     }
 
+    func testPresentationModelCentralizesForecastAndChartAccessibilityLabels() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated),
+            now: now
+        )
+
+        XCTAssertEqual(model.forecastSectionAccessibilityLabel, "Current cycle and forecast.")
+        XCTAssertEqual(
+            model.chartAccessibilityLabel,
+            "Quota forecast chart. Observed usage, estimated forecast, and sustainable pace. Time points: start, today, reset."
+        )
+        XCTAssertEqual(model.loadingWeeklyAccessibilityLabel, "Weekly quota is loading")
+    }
+
+    func testPresentationModelPreservesRefreshErrorAccessibilitySemantics() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated),
+            now: now
+        )
+
+        XCTAssertEqual(
+            model.refreshErrorAccessibilityLabel(for: "Bridge is unavailable"),
+            "Refresh error: Bridge is unavailable"
+        )
+    }
+
     func testFreshDashboardUsesQuotaDisplaysAndSparkOwnReset() {
         let model = PopoverDashboardModel.make(
             from: makeForecastSnapshot(status: .estimated, freshness: .fresh, sparkResetHours: 2),

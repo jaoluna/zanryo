@@ -86,8 +86,9 @@ struct PopoverView: View {
                 .foregroundStyle(PopoverColor.secondaryForeground)
 
             Text(quota.valueText)
-                .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                .font(quotaValueFont(for: quota))
                 .foregroundStyle(valueColor)
+                .lineLimit(1)
 
             Text("RESET \(quota.reset.uppercased())")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -98,6 +99,14 @@ struct PopoverView: View {
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(quota.accessibilityDescription)
+    }
+
+    private func quotaValueFont(for quota: PopoverDashboardModel.QuotaDisplay) -> Font {
+        .system(
+            size: quota.isAvailable ? 30 : 16,
+            weight: quota.isAvailable ? .semibold : .medium,
+            design: .monospaced
+        )
     }
 
     private var loadingQuotaCell: some View {
@@ -118,7 +127,7 @@ struct PopoverView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Weekly quota is loading")
+        .accessibilityLabel(model.loadingWeeklyAccessibilityLabel)
     }
 
     private var forecastSurface: some View {
@@ -149,12 +158,17 @@ struct PopoverView: View {
                     .foregroundStyle(PopoverColor.secondaryForeground)
                     .padding(.vertical, 22)
             } else {
-                ForecastChartView(series: model.forecastSeries)
+                ForecastChartView(
+                    series: model.forecastSeries,
+                    accessibilityLabel: model.chartAccessibilityLabel
+                )
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 13)
         .background(PopoverColor.forecastSurface)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.forecastSectionAccessibilityLabel)
     }
 
     private var decisionRows: some View {
@@ -190,7 +204,7 @@ struct PopoverView: View {
                 if let error = store.lastError {
                     Text(error.message)
                         .foregroundStyle(PopoverColor.warning)
-                        .accessibilityLabel("Refresh error: \(error.message)")
+                        .accessibilityLabel(model.refreshErrorAccessibilityLabel(for: error.message))
                 } else {
                     Text(model.footerText)
                         .foregroundStyle(PopoverColor.secondaryForeground)

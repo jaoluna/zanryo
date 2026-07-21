@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ForecastChartView: View {
     let series: [PopoverForecastPoint]
+    let accessibilityLabel: String
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -83,6 +84,6 @@ struct ForecastChartView: View {
             .foregroundStyle(PopoverColor.secondaryForeground)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Quota forecast chart. Observed usage, estimated forecast, and sustainable pace.")
+        .accessibilityLabel(accessibilityLabel)
     }
 }

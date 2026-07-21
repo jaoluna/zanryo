@@ -47,6 +47,10 @@ struct PopoverDashboardModel: Equatable, Sendable {
     let wordmarkAccessibilityLabel: String
     let headerText: String
     let headerAccessibilityText: String
+    let forecastSectionAccessibilityLabel: String
+    let chartAccessibilityLabel: String
+    let loadingWeeklyAccessibilityLabel: String
+    let refreshErrorAccessibilityPrefix: String
     let weekly: QuotaDisplay?
     let spark: QuotaDisplay
     let account: AccountDisplay
@@ -61,6 +65,10 @@ struct PopoverDashboardModel: Equatable, Sendable {
     let footerActionTitle: String
     let isLoading: Bool
 
+    func refreshErrorAccessibilityLabel(for message: String) -> String {
+        "\(refreshErrorAccessibilityPrefix): \(message)"
+    }
+
     static func make(
         from dashboard: DashboardSnapshot?,
         now: Date = Date(),
@@ -74,6 +82,10 @@ struct PopoverDashboardModel: Equatable, Sendable {
                 wordmarkAccessibilityLabel: "Zanryo",
                 headerText: updateState.text,
                 headerAccessibilityText: updateState.accessibilityText,
+                forecastSectionAccessibilityLabel: forecastSectionAccessibilityText,
+                chartAccessibilityLabel: chartAccessibilityText,
+                loadingWeeklyAccessibilityLabel: loadingWeeklyAccessibilityText,
+                refreshErrorAccessibilityPrefix: refreshErrorAccessibilityText,
                 weekly: nil,
                 spark: unavailableSparkDisplay(),
                 account: AccountDisplay(plan: "Unknown", billingStatus: "Status unavailable"),
@@ -203,6 +215,10 @@ struct PopoverDashboardModel: Equatable, Sendable {
             wordmarkAccessibilityLabel: "Zanryo",
             headerText: updateState.text,
             headerAccessibilityText: updateState.accessibilityText,
+            forecastSectionAccessibilityLabel: forecastSectionAccessibilityText,
+            chartAccessibilityLabel: chartAccessibilityText,
+            loadingWeeklyAccessibilityLabel: loadingWeeklyAccessibilityText,
+            refreshErrorAccessibilityPrefix: refreshErrorAccessibilityText,
             weekly: weekly,
             spark: spark,
             account: makeAccountDisplay(dashboard.account),
@@ -234,6 +250,11 @@ struct PopoverDashboardModel: Equatable, Sendable {
             footerText: "Loading Codex quota data"
         )
     }
+
+    private static let forecastSectionAccessibilityText = "Current cycle and forecast."
+    private static let chartAccessibilityText = "Quota forecast chart. Observed usage, estimated forecast, and sustainable pace. Time points: start, today, reset."
+    private static let loadingWeeklyAccessibilityText = "Weekly quota is loading"
+    private static let refreshErrorAccessibilityText = "Refresh error"
 
     private static func loadingDecisionRows() -> [PopoverMetric] {
         [
