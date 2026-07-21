@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class StatusItemControllerTests: XCTestCase {
     func testUpdateAppliesTitleAndAccessibilityToStatusButton() throws {
-        let controller = StatusItemController(onToggle: { _ in })
+        let controller = StatusItemController(onAction: { _, _, _ in })
         defer { controller.invalidate() }
         let title = StatusTitle(
             attributed: NSAttributedString(string: "Zanryo 15% · 5d 3h"),
