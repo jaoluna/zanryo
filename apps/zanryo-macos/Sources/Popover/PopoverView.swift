@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 struct PopoverView: View {
@@ -9,322 +8,196 @@ struct PopoverView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            scrollBody
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                header
+                divider
+                quotaStrip
+                divider
+                forecastSurface
+                divider
+                decisionRows
+                divider
+                footer
+            }
+            .frame(maxWidth: .infinity)
         }
-        .frame(width: 360)
+        .scrollIndicators(.hidden)
+        .frame(width: 360, height: 500)
         .background(PopoverColor.background)
         .foregroundStyle(PopoverColor.foreground)
     }
 
-    @ViewBuilder
-    private var scrollBody: some View {
-        if model.snapshot == nil {
-            loadingState
-        } else {
-            contentBody
-        }
-    }
-
-    private var loadingState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            Divider()
-                .overlay(PopoverColor.divider)
-            Text("Loading Codex quota…")
-                .foregroundStyle(PopoverColor.secondaryForeground)
-                .font(.system(.body))
-            footer
-        }
-        .padding(16)
-    }
-
-    private var contentBody: some View {
-        VStack(spacing: 12) {
-            header
-            Divider()
-                .overlay(PopoverColor.divider)
-            quotaCard
-            forecastCard
-            controlsCard
-            footer
-        }
-        .padding(16)
-    }
-
     private var header: some View {
-        HStack {
-            HStack(spacing: 10) {
-                Image("zanryo-wordmark")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(height: 18)
-                    .accessibilityHidden(true)
-                Text("Zanryo")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(PopoverColor.accent)
-                    .accessibilityHidden(true)
-            }
+        HStack(spacing: 12) {
+            Image("zanryo-wordmark")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(height: 17)
+                .accessibilityLabel(model.wordmarkAccessibilityLabel)
+                .accessibilityAddTraits(.isHeader)
+
             Spacer()
+
+            Text(model.headerText.uppercased())
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+                .accessibilityLabel(model.footerText)
+
             if store.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
-                    .tint(PopoverColor.accent)
+                    .tint(PopoverColor.secondaryForeground)
+                    .accessibilityLabel("Refreshing quota data")
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 
-    private var quotaCard: some View {
-        let snapshot = model.snapshot
+    private var quotaStrip: some View {
+        HStack(spacing: 0) {
+            if let weekly = model.weekly {
+                quotaCell(weekly, valueColor: PopoverColor.accent)
+            }
 
-        return card {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Weekly")
-                        .font(.caption.weight(.semibold))
+            if let spark = model.spark {
+                Divider()
+                    .overlay(PopoverColor.divider)
+                    .padding(.vertical, 12)
+                quotaCell(spark, valueColor: PopoverColor.foreground)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func quotaCell(
+        _ quota: PopoverDashboardModel.QuotaDisplay,
+        valueColor: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(quota.label.uppercased())
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+
+            Text("\(quota.percentage)%")
+                .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                .foregroundStyle(valueColor)
+
+            Text("RESET \(quota.reset.uppercased())")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(quota.accessibilityDescription)
+    }
+
+    private var forecastSurface: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(model.forecastTitle.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(PopoverColor.accent)
+
+                Spacer()
+
+                Text(model.forecastConfidence.uppercased())
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(PopoverColor.secondaryForeground)
+            }
+
+            Text(model.forecastPaceText)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(PopoverColor.foreground)
+
+            if model.forecastSeries.isEmpty {
+                Text("Forecast data will appear after quota history is collected.")
+                    .font(.caption)
+                    .foregroundStyle(PopoverColor.secondaryForeground)
+                    .padding(.vertical, 22)
+            } else {
+                ForecastChartView(series: model.forecastSeries)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .background(PopoverColor.forecastSurface)
+    }
+
+    private var decisionRows: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.decisionRows.enumerated()), id: \.offset) { index, row in
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(row.label)
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer()
-                    if let reset = snapshot?.weeklyResetSpoken {
-                        Text("Reset in \(reset)")
-                            .font(.caption)
-                            .foregroundStyle(PopoverColor.secondaryForeground)
-                    }
-                }
 
-                HStack(alignment: .firstTextBaseline) {
-                    Text("\(snapshot?.weeklyPercent ?? 0)%")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(PopoverColor.accent)
-                    Text("%")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundStyle(PopoverColor.accent)
-                    Spacer()
-                }
+                    Spacer(minLength: 12)
 
-                HStack {
-                    Text("Spark")
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer()
-                    Text(snapshot?.sparkPercent ?? "--")
+                    Text(row.value)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .multilineTextAlignment(.trailing)
                         .foregroundStyle(PopoverColor.foreground)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
 
-                if let isFresh = snapshot?.isFresh, !isFresh {
-                    Text("Data may be outdated.")
-                        .font(.caption)
-                        .foregroundStyle(PopoverColor.secondaryForeground)
+                if index < model.decisionRows.count - 1 {
+                    Divider()
+                        .overlay(PopoverColor.divider)
+                        .padding(.leading, 16)
                 }
-            }
-        }
-    }
-
-    private var forecastCard: some View {
-        card {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(model.forecastTitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer()
-                    Text("Confidence: \(model.forecastConfidence)")
-                        .font(.caption)
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                }
-
-                if model.hasForecastProjection {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(model.forecastMetrics.indices, id: \.self) { index in
-                            let metric = model.forecastMetrics[index]
-                            HStack {
-                                Text(metric.label)
-                                    .foregroundStyle(PopoverColor.secondaryForeground)
-                                Spacer()
-                                Text(metric.value)
-                                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                                    .foregroundStyle(PopoverColor.foreground)
-                            }
-                            .font(.system(size: 12.5))
-                        }
-                    }
-                } else {
-                    if let metric = model.forecastMetrics.first {
-                        Text(metric.value)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(PopoverColor.secondaryForeground)
-                    }
-                }
-
-                if !model.forecastSeries.isEmpty {
-                    forecastChart
-                }
-            }
-        }
-    }
-
-    private var forecastChart: some View {
-        Chart {
-            let observed = model.forecastSeries.filter { $0.kind == .observed }
-            if !observed.isEmpty {
-                ForEach(Array(observed.enumerated()), id: \.offset) { _, point in
-                    LineMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .foregroundStyle(PopoverColor.foreground)
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    PointMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .symbolSize(18)
-                    .foregroundStyle(PopoverColor.foreground)
-                }
-            }
-
-            let forecast = model.forecastSeries.filter { $0.kind == .forecast }
-            if !forecast.isEmpty {
-                ForEach(Array(forecast.enumerated()), id: \.offset) { _, point in
-                    AreaMark(
-                        x: .value("Time", point.at),
-                        yStart: .value("Low", point.lowUncertainty ?? point.remainingPercent),
-                        yEnd: .value("High", point.highUncertainty ?? point.remainingPercent)
-                    )
-                    .foregroundStyle(PopoverColor.accent.opacity(0.15))
-
-                    LineMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .foregroundStyle(PopoverColor.accent)
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    PointMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .symbolSize(18)
-                    .foregroundStyle(PopoverColor.accent)
-                }
-            }
-
-            let sustainable = model.forecastSeries.filter { $0.kind == .sustainable }
-            if !sustainable.isEmpty {
-                ForEach(Array(sustainable.enumerated()), id: \.offset) { _, point in
-                    LineMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .foregroundStyle(PopoverColor.softWhite)
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    PointMark(
-                        x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
-                    )
-                    .symbolSize(18)
-                    .foregroundStyle(PopoverColor.softWhite)
-                }
-            }
-        }
-        .chartYScale(domain: 0...100)
-        .frame(height: 140)
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 3))
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
-                AxisGridLine()
-                AxisValueLabel()
-            }
-        }
-    }
-
-    private var controlsCard: some View {
-        card {
-            VStack(spacing: 10) {
-                HStack {
-                    Text("API spend")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer()
-                    Text(model.apiSpendText)
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                        .font(.system(size: 16, weight: .medium))
-                }
-
-                HStack {
-                    Text("Theme")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer()
-                    Text(model.themeText)
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                }
-
-                Button("Settings") {}
-                    .buttonStyle(.borderedProminent)
-                    .disabled(true)
-                    .controlSize(.mini)
             }
         }
     }
 
     private var footer: some View {
-        HStack {
-            if let error = store.lastError {
-                Text(error.message)
-                    .font(.caption)
-                    .foregroundStyle(PopoverColor.warning)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Manual refresh only.")
-                    .font(.caption)
-                    .foregroundStyle(PopoverColor.secondaryForeground)
+        HStack(alignment: .center, spacing: 12) {
+            Group {
+                if let error = store.lastError {
+                    Text(error.message)
+                        .foregroundStyle(PopoverColor.warning)
+                        .accessibilityLabel("Refresh error: \(error.message)")
+                } else {
+                    Text(model.footerText)
+                        .foregroundStyle(PopoverColor.secondaryForeground)
+                }
             }
+            .font(.caption)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            Button("Refresh") {
+            Button(model.footerActionTitle) {
                 Task { await store.refresh() }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(store.isRefreshing)
+            .accessibilityLabel(store.isRefreshing ? "Refreshing quota data" : "Refresh quota data")
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
     }
 
-    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        content()
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .background(PopoverColor.card)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(PopoverColor.border, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+    private var divider: some View {
+        Divider()
+            .overlay(PopoverColor.divider)
     }
-
 }
 
 enum PopoverColor {
     static let background = Color(red: 12 / 255, green: 14 / 255, blue: 16 / 255)
-    static let card = Color(red: 22 / 255, green: 25 / 255, blue: 29 / 255)
+    static let forecastSurface = Color(red: 22 / 255, green: 25 / 255, blue: 29 / 255)
     static let foreground = Color(red: 248 / 255, green: 243 / 255, blue: 232 / 255)
-    static let softWhite = Color(red: 244 / 255, green: 248 / 255, blue: 255 / 255)
-    static let accent = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
     static let secondaryForeground = Color(red: 176 / 255, green: 182 / 255, blue: 193 / 255)
+    static let chartMuted = Color(red: 121 / 255, green: 128 / 255, blue: 139 / 255)
+    static let accent = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
     static let divider = Color.white.opacity(0.12)
-    static let border = Color.white.opacity(0.06)
     static let warning = Color(red: 255 / 255, green: 163 / 255, blue: 163 / 255)
 }

@@ -18,6 +18,8 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(
             model.decisionRows,
             [
+                PopoverMetric(label: "Estimated depletion", value: "Collecting history"),
+                PopoverMetric(label: "Pace vs. budget", value: "Collecting history"),
                 PopoverMetric(label: "Plan", value: "Unknown"),
                 PopoverMetric(label: "Billing status", value: "Status unavailable")
             ]
@@ -54,10 +56,41 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertTrue(model.forecastSeries.contains(where: { $0.kind == .sustainable }))
     }
 
-    func testApiSpendAndThemeHaveExpectedDefaults() {
-        let model = PopoverDashboardModel.make(from: makeForecastSnapshot(status: .estimated), now: now)
-        XCTAssertEqual(model.apiSpendText, "Not configured")
-        XCTAssertEqual(model.themeText, "Coming soon")
+    func testFinalPanelModelExposesQuotaForecastDecisionRowsAndSingleRefreshAction() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated, consumed: 12.5, paceDiff: 2.3),
+            now: now
+        )
+
+        XCTAssertEqual(model.weekly?.percentage, 15)
+        XCTAssertEqual(model.spark?.percentage, 88)
+        XCTAssertEqual(model.forecastTitle, "Estimated forecast")
+        XCTAssertEqual(model.forecastPaceText, "Observed pace: 12.5%/day")
+        XCTAssertEqual(model.decisionRows.map(\.label), [
+            "Estimated depletion", "Pace vs. budget", "Plan", "Billing status"
+        ])
+        XCTAssertEqual(model.footerActionTitle, "Refresh")
+        XCTAssertFalse(model.footerText.contains("Manual refresh"))
+    }
+
+    func testPresentationModelProvidesVoiceOverDescriptionsAndTextualStates() {
+        let stale = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated, freshness: .stale, sparkResetHours: 2),
+            now: now
+        )
+        let loading = PopoverDashboardModel.make(from: nil, now: now)
+
+        XCTAssertEqual(stale.wordmarkAccessibilityLabel, "Zanryo")
+        XCTAssertEqual(
+            stale.weekly?.accessibilityDescription,
+            "Weekly quota: 15 percent remaining. Resets in 5 days and 3 hours."
+        )
+        XCTAssertEqual(
+            stale.spark?.accessibilityDescription,
+            "Spark quota: 88 percent remaining. Resets in 2 hours."
+        )
+        XCTAssertEqual(stale.footerText, "Cached data — may be out of date")
+        XCTAssertEqual(loading.footerText, "Loading Codex quota data")
     }
 
     func testFreshDashboardUsesQuotaDisplaysAndSparkOwnReset() {

@@ -21,9 +21,11 @@ struct PopoverMetric: Equatable, Sendable {
 
 struct PopoverDashboardModel: Equatable, Sendable {
     struct QuotaDisplay: Equatable, Sendable {
+        let label: String
         let percentage: Int
         let reset: String
         let resetSpoken: String
+        let accessibilityDescription: String
     }
 
     struct AccountDisplay: Equatable, Sendable {
@@ -40,52 +42,68 @@ struct PopoverDashboardModel: Equatable, Sendable {
     }
 
     let snapshot: Snapshot?
+    let wordmarkAccessibilityLabel: String
     let headerText: String
     let weekly: QuotaDisplay?
     let spark: QuotaDisplay?
     let account: AccountDisplay
     let forecastTitle: String
+    let forecastPaceText: String
     let forecastConfidence: String
     let forecastMetrics: [PopoverMetric]
     let decisionRows: [PopoverMetric]
     let forecastSeries: [PopoverForecastPoint]
     let hasForecastProjection: Bool
-    let apiSpendText: String
-    let themeText: String
+    let footerText: String
+    let footerActionTitle: String
     let isLoading: Bool
 
     static func make(from dashboard: DashboardSnapshot?, now: Date = Date()) -> PopoverDashboardModel {
         guard let dashboard else {
             return PopoverDashboardModel(
                 snapshot: nil,
+                wordmarkAccessibilityLabel: "Zanryo",
                 headerText: "Loading",
                 weekly: nil,
                 spark: nil,
                 account: AccountDisplay(plan: "Unknown", billingStatus: "Status unavailable"),
                 forecastTitle: "Loading",
+                forecastPaceText: "Forecast will appear after quota data loads",
                 forecastConfidence: "Collecting",
                 forecastMetrics: [],
                 decisionRows: [],
                 forecastSeries: [],
                 hasForecastProjection: false,
-                apiSpendText: "Not configured",
-                themeText: "Coming soon",
+                footerText: "Loading Codex quota data",
+                footerActionTitle: "Refresh",
                 isLoading: true
             )
         }
 
         let weeklyReset = ResetDuration(formatFrom: now, to: dashboard.quota.weekly.resetsAt)
         let weekly = QuotaDisplay(
+            label: "Weekly",
             percentage: Int(dashboard.quota.weekly.remainingPercent.rounded()),
             reset: weeklyReset.compact,
-            resetSpoken: weeklyReset.spoken
+            resetSpoken: weeklyReset.spoken,
+            accessibilityDescription: quotaAccessibilityDescription(
+                label: "Weekly",
+                percentage: Int(dashboard.quota.weekly.remainingPercent.rounded()),
+                reset: weeklyReset.spoken
+            )
         )
         let spark = dashboard.quota.spark.map { limit in
             let reset = ResetDuration(formatFrom: now, to: limit.resetsAt)
             return QuotaDisplay(
+                label: "Spark",
                 percentage: Int(limit.remainingPercent.rounded()),
                 reset: reset.compact,
-                resetSpoken: reset.spoken
+                resetSpoken: reset.spoken,
+                accessibilityDescription: quotaAccessibilityDescription(
+                    label: "Spark",
+                    percentage: Int(limit.remainingPercent.rounded()),
+                    reset: reset.spoken
+                )
             )
         }
         let snapshot = Snapshot(
@@ -164,18 +182,20 @@ struct PopoverDashboardModel: Equatable, Sendable {
 
         return PopoverDashboardModel(
             snapshot: snapshot,
+            wordmarkAccessibilityLabel: "Zanryo",
             headerText: dashboard.quota.freshness == .fresh ? "Updated now" : "Cached data",
             weekly: weekly,
             spark: spark,
             account: makeAccountDisplay(dashboard.account),
             forecastTitle: forecastTitle,
+            forecastPaceText: forecastPaceText(for: dashboard.forecast),
             forecastConfidence: confidenceLabel(dashboard.forecast.confidence),
             forecastMetrics: metrics,
             decisionRows: decisionRows,
             forecastSeries: series,
             hasForecastProjection: hasForecastProjection,
-            apiSpendText: "Not configured",
-            themeText: "Coming soon",
+            footerText: footerText(for: dashboard.quota.freshness),
+            footerActionTitle: "Refresh",
             isLoading: false
         )
     }
@@ -232,32 +252,23 @@ struct PopoverDashboardModel: Equatable, Sendable {
         forecast: ForecastReport,
         account: AccountContext?
     ) -> [PopoverMetric] {
-        var rows: [PopoverMetric] = []
-
-        if forecast.status == .estimated {
-            if let depletion = forecast.estimatedDepletionAt {
-                rows.append(
-                    PopoverMetric(
-                        label: "Estimated depletion",
-                        value: formatAbsoluteDate(depletion)
-                    )
-                )
-            }
-
-            if let paceDifference = forecast.paceDifference {
-                rows.append(
-                    PopoverMetric(
-                        label: "Pace vs. budget",
-                        value: paceDescription(paceDifference)
-                    )
-                )
-            }
-        }
+        let forecastUnavailableText = forecast.status == .collectingHistory
+            ? "Collecting history"
+            : "Estimating…"
+        let depletion = forecast.status == .estimated
+            ? forecast.estimatedDepletionAt.map(formatAbsoluteDate) ?? forecastUnavailableText
+            : forecastUnavailableText
+        let pace = forecast.status == .estimated
+            ? forecast.paceDifference.map(paceDescription) ?? forecastUnavailableText
+            : forecastUnavailableText
 
         let account = makeAccountDisplay(account)
-        rows.append(PopoverMetric(label: "Plan", value: account.plan))
-        rows.append(PopoverMetric(label: "Billing status", value: account.billingStatus))
-        return rows
+        return [
+            PopoverMetric(label: "Estimated depletion", value: depletion),
+            PopoverMetric(label: "Pace vs. budget", value: pace),
+            PopoverMetric(label: "Plan", value: account.plan),
+            PopoverMetric(label: "Billing status", value: account.billingStatus)
+        ]
     }
 
     private static func planLabel(_ planType: PlanType) -> String {
@@ -296,6 +307,35 @@ struct PopoverDashboardModel: Equatable, Sendable {
     private static func paceDescription(_ paceDifference: Double) -> String {
         let direction = paceDifference >= 0 ? "over budget" : "under budget"
         return "\(formatPercent(abs(paceDifference)))%/day \(direction)"
+    }
+
+    private static func forecastPaceText(for forecast: ForecastReport) -> String {
+        guard forecast.status == .estimated else {
+            return "Forecast will appear after more history"
+        }
+
+        guard let consumedPerDay = forecast.consumedPerDay else {
+            return "Estimating observed pace"
+        }
+
+        return "Observed pace: \(formatPercent(consumedPerDay))%/day"
+    }
+
+    private static func footerText(for freshness: Freshness) -> String {
+        switch freshness {
+        case .fresh:
+            "Updated now"
+        case .stale:
+            "Cached data — may be out of date"
+        }
+    }
+
+    private static func quotaAccessibilityDescription(
+        label: String,
+        percentage: Int,
+        reset: String
+    ) -> String {
+        "\(label) quota: \(percentage) percent remaining. Resets in \(reset)."
     }
 
     private static func confidenceLabel(_ confidence: ForecastConfidence) -> String {
