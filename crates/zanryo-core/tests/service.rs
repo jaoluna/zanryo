@@ -6,15 +6,18 @@ use async_trait::async_trait;
 use chrono::{Duration, TimeZone, Utc};
 use tempfile::tempdir;
 use zanryo_core::{
-    ForecastStatus, Freshness, HistoryRepository, LimitKind, QuotaService, RateLimit,
-    RateLimitSource, Result, ZanryoError,
+    AccountContext, ForecastStatus, Freshness, HistoryRepository, LimitKind, PlanType,
+    QuotaService, RateLimit, RateLimitSource, Result, ZanryoError,
 };
 
 struct FakeSource {
     limits: Vec<RateLimit>,
     fail: bool,
+    plan: PlanType,
+    account_fail: bool,
     delay: StdDuration,
     reads: Arc<AtomicUsize>,
+    account_reads: Arc<AtomicUsize>,
 }
 
 impl FakeSource {
@@ -22,8 +25,11 @@ impl FakeSource {
         Self {
             limits,
             fail: false,
+            plan: PlanType::Plus,
+            account_fail: false,
             delay: StdDuration::ZERO,
             reads: Arc::new(AtomicUsize::new(0)),
+            account_reads: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -31,8 +37,11 @@ impl FakeSource {
         Self {
             limits: Vec::new(),
             fail: true,
+            plan: PlanType::Unknown,
+            account_fail: true,
             delay: StdDuration::ZERO,
             reads: Arc::new(AtomicUsize::new(0)),
+            account_reads: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -47,6 +56,17 @@ impl RateLimitSource for FakeSource {
             Err(ZanryoError::Transport("source unavailable".to_owned()))
         } else {
             Ok(self.limits.clone())
+        }
+    }
+
+    async fn read_account_plan(&self) -> Result<PlanType> {
+        self.account_reads.fetch_add(1, Ordering::SeqCst);
+        tokio::time::sleep(self.delay).await;
+
+        if self.account_fail {
+            Err(ZanryoError::Transport("account unavailable".to_owned()))
+        } else {
+            Ok(self.plan)
         }
     }
 }
@@ -168,4 +188,167 @@ async fn refresh_dashboard_returns_matching_quota_and_forecast() {
             .unwrap()
             .remaining_percent
     );
+}
+
+#[tokio::test]
+async fn fresh_dashboard_includes_and_persists_the_account_plan() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history.clone());
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let dashboard = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(dashboard.account.plan_type, PlanType::Plus);
+    assert_eq!(
+        history.latest_account_context().unwrap(),
+        Some(AccountContext::new(PlanType::Plus, now))
+    );
+}
+
+#[tokio::test]
+async fn fresh_dashboard_reuses_a_plan_cached_less_than_24_hours_ago() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(
+            PlanType::Plus,
+            now - Duration::hours(23),
+        ))
+        .unwrap();
+    let source = FakeSource::succeeding(sample_limits());
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+
+    let dashboard = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(dashboard.account.plan_type, PlanType::Plus);
+    assert_eq!(account_reads.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn failed_account_read_keeps_the_fresh_quota_and_cached_plan() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(
+            PlanType::Plus,
+            now - Duration::hours(24),
+        ))
+        .unwrap();
+    let mut source = FakeSource::succeeding(sample_limits());
+    source.account_fail = true;
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+
+    let dashboard = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(dashboard.quota.freshness, Freshness::Fresh);
+    assert_eq!(dashboard.account.plan_type, PlanType::Plus);
+    assert_eq!(account_reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn concurrent_fresh_dashboards_share_one_account_read() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let mut source = FakeSource::succeeding(sample_limits());
+    source.delay = StdDuration::from_millis(30);
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let (first, second) = tokio::join!(
+        service.refresh_dashboard(now),
+        service.refresh_dashboard(now)
+    );
+
+    assert_eq!(first.unwrap().account.plan_type, PlanType::Plus);
+    assert_eq!(second.unwrap().account.plan_type, PlanType::Plus);
+    assert_eq!(account_reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn concurrent_account_rpc_failure_without_cache_shares_one_unknown_outcome() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let mut source = FakeSource::succeeding(sample_limits());
+    source.account_fail = true;
+    source.delay = StdDuration::from_millis(30);
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let (first, second) = tokio::join!(
+        service.refresh_dashboard(now),
+        service.refresh_dashboard(now)
+    );
+
+    assert_eq!(first.unwrap().account, AccountContext::unknown());
+    assert_eq!(second.unwrap().account, AccountContext::unknown());
+    assert_eq!(account_reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn concurrent_account_rpc_failure_shares_the_cached_plan_outcome() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(
+            PlanType::Plus,
+            now - Duration::hours(24),
+        ))
+        .unwrap();
+    let mut source = FakeSource::succeeding(sample_limits());
+    source.account_fail = true;
+    source.delay = StdDuration::from_millis(30);
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+
+    let (first, second) = tokio::join!(
+        service.refresh_dashboard(now),
+        service.refresh_dashboard(now)
+    );
+
+    assert_eq!(first.unwrap().account.plan_type, PlanType::Plus);
+    assert_eq!(second.unwrap().account.plan_type, PlanType::Plus);
+    assert_eq!(account_reads.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn sequential_account_rpc_failures_retry_after_a_shared_outcome() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let mut source = FakeSource::succeeding(sample_limits());
+    source.account_fail = true;
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let first = service.refresh_dashboard(now).await.unwrap();
+    let second = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(first.account, AccountContext::unknown());
+    assert_eq!(second.account, AccountContext::unknown());
+    assert_eq!(account_reads.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn stale_dashboard_does_not_read_the_account_plan() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    history.insert_limits(&sample_limits()).unwrap();
+    let source = FakeSource::failing();
+    let account_reads = Arc::clone(&source.account_reads);
+    let service = QuotaService::new(source, history);
+    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+
+    let dashboard = service.refresh_dashboard(now).await.unwrap();
+
+    assert_eq!(dashboard.quota.freshness, Freshness::Stale);
+    assert_eq!(dashboard.account, AccountContext::unknown());
+    assert_eq!(account_reads.load(Ordering::SeqCst), 0);
 }

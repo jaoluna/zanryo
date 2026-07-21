@@ -13,7 +13,10 @@ use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, oneshot, watch};
 use tokio::time::timeout;
 
-use crate::{RateLimit, Result, ZanryoError, decode_rate_limits, is_rate_limits_update};
+use crate::{
+    PlanType, RateLimit, Result, ZanryoError, decode_account_plan, decode_rate_limits,
+    is_rate_limits_update,
+};
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -23,6 +26,7 @@ type PendingResponses = HashMap<u64, oneshot::Sender<RpcResponse>>;
 #[async_trait::async_trait]
 pub trait RateLimitSource: Send + Sync {
     async fn read_rate_limits(&self) -> Result<Vec<RateLimit>>;
+    async fn read_account_plan(&self) -> Result<PlanType>;
 }
 
 pub struct CodexAppServer {
@@ -178,6 +182,12 @@ impl RateLimitSource for CodexAppServer {
         let response = self.request(build_rate_limits_request(id)).await?;
         decode_rate_limits(response, Utc::now())
     }
+
+    async fn read_account_plan(&self) -> Result<PlanType> {
+        let id = self.state.next_id();
+        let response = self.request(build_account_request(id)).await?;
+        decode_account_plan(response)
+    }
 }
 
 struct RpcState {
@@ -219,6 +229,14 @@ fn build_rate_limits_request(id: u64) -> Value {
     json!({
         "id": id,
         "method": "account/rateLimits/read"
+    })
+}
+
+fn build_account_request(id: u64) -> Value {
+    json!({
+        "id": id,
+        "method": "account/read",
+        "params": {}
     })
 }
 
@@ -304,6 +322,15 @@ mod tests {
         assert_eq!(request["id"], 7);
         assert_eq!(request["method"], "account/rateLimits/read");
         assert!(request.get("params").is_none());
+    }
+
+    #[test]
+    fn account_request_uses_required_empty_params_object() {
+        let request = build_account_request(3);
+
+        assert_eq!(request["id"], 3);
+        assert_eq!(request["method"], "account/read");
+        assert_eq!(request["params"], json!({}));
     }
 
     #[test]

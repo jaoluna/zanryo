@@ -5,18 +5,22 @@ use chrono::{DateTime, Duration, Utc};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::{
-    DashboardSnapshot, ForecastEngine, ForecastReport, Freshness, HistoryRepository, QuotaSnapshot,
-    RateLimitSource, Result, ZanryoError,
+    AccountContext, DashboardSnapshot, ForecastEngine, ForecastReport, Freshness,
+    HistoryRepository, QuotaSnapshot, RateLimitSource, Result, ZanryoError,
 };
 
 const HISTORY_RETENTION_DAYS: i64 = 90;
+const ACCOUNT_CACHE_MAX_AGE_HOURS: i64 = 24;
 
 pub struct QuotaService<S> {
     source: Arc<S>,
     history: HistoryRepository,
     refresh_lock: Mutex<()>,
+    account_refresh_lock: Mutex<()>,
     generation: AtomicU64,
+    account_generation: AtomicU64,
     last_success: RwLock<Option<QuotaSnapshot>>,
+    last_account_outcome: RwLock<Option<AccountContext>>,
 }
 
 impl<S> QuotaService<S>
@@ -28,8 +32,11 @@ where
             source: Arc::new(source),
             history,
             refresh_lock: Mutex::new(()),
+            account_refresh_lock: Mutex::new(()),
             generation: AtomicU64::new(0),
+            account_generation: AtomicU64::new(0),
             last_success: RwLock::new(None),
+            last_account_outcome: RwLock::new(None),
         }
     }
 
@@ -85,9 +92,66 @@ where
 
     pub async fn refresh_dashboard(&self, now: DateTime<Utc>) -> Result<DashboardSnapshot> {
         let quota = self.refresh().await?;
+        let account = if quota.freshness == Freshness::Fresh {
+            self.fresh_account_context(now).await
+        } else {
+            self.cached_account_context()
+                .await
+                .unwrap_or_else(AccountContext::unknown)
+        };
         let forecast = self.forecast(now).await?;
-        Ok(DashboardSnapshot { quota, forecast })
+        Ok(DashboardSnapshot {
+            quota,
+            forecast,
+            account,
+        })
     }
+
+    async fn cached_account_context(&self) -> Option<AccountContext> {
+        let history = self.history.clone();
+        run_history_task(move || history.latest_account_context())
+            .await
+            .ok()
+            .flatten()
+    }
+
+    async fn fresh_account_context(&self, now: DateTime<Utc>) -> AccountContext {
+        let observed_generation = self.account_generation.load(Ordering::Acquire);
+        let _guard = self.account_refresh_lock.lock().await;
+
+        if self.account_generation.load(Ordering::Acquire) != observed_generation {
+            if let Some(outcome) = self.last_account_outcome.read().await.clone() {
+                return outcome;
+            }
+        }
+
+        let cached_account = self.cached_account_context().await;
+        if !account_needs_refresh(cached_account.as_ref(), now) {
+            return cached_account.unwrap_or_else(AccountContext::unknown);
+        }
+
+        let account = match self.source.read_account_plan().await {
+            Ok(plan_type) => {
+                let account = AccountContext::new(plan_type, now);
+                let history = self.history.clone();
+                let persisted_account = account.clone();
+                let _ =
+                    run_history_task(move || history.upsert_account_context(&persisted_account))
+                        .await;
+                account
+            }
+            Err(_) => cached_account.unwrap_or_else(AccountContext::unknown),
+        };
+        *self.last_account_outcome.write().await = Some(account.clone());
+        self.account_generation.fetch_add(1, Ordering::Release);
+        account
+    }
+}
+
+fn account_needs_refresh(context: Option<&AccountContext>, now: DateTime<Utc>) -> bool {
+    context
+        .and_then(|account| account.observed_at)
+        .is_none_or(|observed_at| observed_at <= now - Duration::hours(ACCOUNT_CACHE_MAX_AGE_HOURS))
 }
 
 async fn run_history_task<T, F>(operation: F) -> Result<T>

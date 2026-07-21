@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{LimitKind, RateLimit, Result, ZanryoError};
+use crate::{LimitKind, PlanType, RateLimit, Result, ZanryoError};
 
 const WEEKLY_WINDOW_MINUTES: i64 = 7 * 24 * 60;
 
@@ -84,6 +84,18 @@ pub fn decode_rate_limits(value: Value, observed_at: DateTime<Utc>) -> Result<Ve
     Err(ZanryoError::Protocol(
         "rateLimits payload is missing".to_owned(),
     ))
+}
+
+pub fn decode_account_plan(value: Value) -> Result<PlanType> {
+    let plan_type = value
+        .get("result")
+        .and_then(|result| result.get("account"))
+        .and_then(|account| account.get("planType"))
+        .and_then(Value::as_str)
+        .map(PlanType::from_app_server)
+        .unwrap_or(PlanType::Unknown);
+
+    Ok(plan_type)
 }
 
 pub fn is_rate_limits_update(value: &Value) -> bool {

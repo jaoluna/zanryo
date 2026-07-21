@@ -1,7 +1,8 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use tempfile::tempdir;
 use zanryo_core::{
-    ForecastStatus, Freshness, HistoryRepository, LimitKind, RateLimit, cached_dashboard,
+    AccountContext, ForecastStatus, Freshness, HistoryRepository, LimitKind, PlanType, RateLimit,
+    cached_dashboard,
 };
 
 fn weekly(
@@ -37,4 +38,6 @@ fn cached_dashboard_combines_latest_quota_with_history_forecast() {
     assert_eq!(dashboard.quota.freshness, Freshness::Stale);
     assert_eq!(dashboard.quota.weekly.remaining_percent, 76.0);
     assert_eq!(dashboard.forecast.status, ForecastStatus::Estimated);
+    assert_eq!(dashboard.account, AccountContext::unknown());
+    assert_eq!(dashboard.account.plan_type, PlanType::Unknown);
 }

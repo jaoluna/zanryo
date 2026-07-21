@@ -1,7 +1,8 @@
 use chrono::{TimeZone, Utc};
 use rusqlite::Connection;
+use serde_json::json;
 use tempfile::tempdir;
-use zanryo_core::{AccountContext, HistoryRepository, PlanType};
+use zanryo_core::{AccountContext, HistoryRepository, PlanType, decode_account_plan};
 
 fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 7, 21, hour, minute, 0).unwrap()
@@ -24,6 +25,21 @@ fn app_server_plan_types_map_only_known_values() {
     ] {
         assert_eq!(PlanType::from_app_server(raw), expected);
     }
+}
+
+#[test]
+fn decodes_only_plan_type_from_account_read_response() {
+    let value = serde_json::from_str(include_str!("fixtures/account.json")).unwrap();
+
+    assert_eq!(decode_account_plan(value).unwrap(), PlanType::Plus);
+}
+
+#[test]
+fn missing_plan_type_becomes_unknown_without_failing_quota() {
+    assert_eq!(
+        decode_account_plan(json!({"result":{"account":{}}})).unwrap(),
+        PlanType::Unknown
+    );
 }
 
 #[test]

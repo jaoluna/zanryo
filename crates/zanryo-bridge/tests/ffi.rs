@@ -6,7 +6,7 @@ use zanryo_bridge::{
     BridgeHandle, zanryo_cached_json, zanryo_create, zanryo_destroy, zanryo_refresh_json,
     zanryo_string_free,
 };
-use zanryo_core::{HistoryRepository, LimitKind, RateLimit};
+use zanryo_core::{AccountContext, HistoryRepository, LimitKind, PlanType, RateLimit};
 
 unsafe fn owned_json(pointer: *mut c_char) -> String {
     assert!(!pointer.is_null());
@@ -55,6 +55,9 @@ fn cached_json_serializes_persisted_dashboard() {
     )
     .unwrap();
     history.insert_limits(&[weekly]).unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(PlanType::Plus, now))
+        .unwrap();
     drop(history);
     let handle = Box::into_raw(Box::new(BridgeHandle::open(&path)));
 
@@ -64,6 +67,8 @@ fn cached_json_serializes_persisted_dashboard() {
     assert_eq!(value["ok"], true);
     assert_eq!(value["data"]["quota"]["weekly"]["remaining_percent"], 76.0);
     assert_eq!(value["data"]["forecast"]["status"], "collecting_history");
+    assert_eq!(value["data"]["account"]["plan_type"], "plus");
+    assert!(value["data"]["account"].get("email").is_none());
     unsafe { zanryo_destroy(handle) };
 }
 
