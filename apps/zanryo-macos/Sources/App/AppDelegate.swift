@@ -2,6 +2,7 @@ import AppKit
 import Combine
 
 @MainActor
+@main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: ZanryoStore?
     private var statusItemController: StatusItemController?
