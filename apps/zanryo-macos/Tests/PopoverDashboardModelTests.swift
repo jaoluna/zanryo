@@ -136,6 +136,33 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.footerText, "Updating Codex quota data")
     }
 
+    func testRefreshingEmptyDashboardUsesUpdatingPresentation() {
+        let model = PopoverDashboardModel.make(
+            from: nil,
+            now: now,
+            isRefreshing: true
+        )
+
+        XCTAssertEqual(model.headerText, "Updating")
+        XCTAssertEqual(model.headerAccessibilityText, "Updating Codex quota data")
+        XCTAssertEqual(model.footerText, "Updating Codex quota data")
+    }
+
+    func testLoadingDashboardRetainsAllDecisionRowsWithClearValues() {
+        let model = PopoverDashboardModel.make(from: nil, now: now)
+
+        XCTAssertEqual(
+            model.decisionRows,
+            [
+                PopoverMetric(label: "Estimated depletion", value: "Loading"),
+                PopoverMetric(label: "Pace vs. budget", value: "Loading"),
+                PopoverMetric(label: "Plan", value: "Loading"),
+                PopoverMetric(label: "Billing status", value: "Status unavailable")
+            ]
+        )
+        XCTAssertEqual(model.account.billingStatus, "Status unavailable")
+    }
+
     func testDashboardUsesPlanAndBillingPresentationBoundary() {
         let model = PopoverDashboardModel.make(
             from: makeForecastSnapshot(status: .estimated, planType: .plus),

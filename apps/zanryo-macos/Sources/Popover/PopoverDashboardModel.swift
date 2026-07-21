@@ -67,11 +67,13 @@ struct PopoverDashboardModel: Equatable, Sendable {
         isRefreshing: Bool = false
     ) -> PopoverDashboardModel {
         guard let dashboard else {
+            let updateState = makeLoadingState(isRefreshing: isRefreshing)
+
             return PopoverDashboardModel(
                 snapshot: nil,
                 wordmarkAccessibilityLabel: "Zanryo",
-                headerText: "Loading",
-                headerAccessibilityText: "Loading Codex quota data",
+                headerText: updateState.text,
+                headerAccessibilityText: updateState.accessibilityText,
                 weekly: nil,
                 spark: unavailableSparkDisplay(),
                 account: AccountDisplay(plan: "Unknown", billingStatus: "Status unavailable"),
@@ -79,10 +81,10 @@ struct PopoverDashboardModel: Equatable, Sendable {
                 forecastPaceText: "Forecast will appear after quota data loads",
                 forecastConfidence: "Collecting",
                 forecastMetrics: [],
-                decisionRows: [],
+                decisionRows: loadingDecisionRows(),
                 forecastSeries: [],
                 hasForecastProjection: false,
-                footerText: "Loading Codex quota data",
+                footerText: updateState.footerText,
                 footerActionTitle: "Refresh",
                 isLoading: true
             )
@@ -215,6 +217,31 @@ struct PopoverDashboardModel: Equatable, Sendable {
             footerActionTitle: "Refresh",
             isLoading: false
         )
+    }
+
+    private static func makeLoadingState(isRefreshing: Bool) -> UpdateState {
+        if isRefreshing {
+            return UpdateState(
+                text: "Updating",
+                accessibilityText: "Updating Codex quota data",
+                footerText: "Updating Codex quota data"
+            )
+        }
+
+        return UpdateState(
+            text: "Loading",
+            accessibilityText: "Loading Codex quota data",
+            footerText: "Loading Codex quota data"
+        )
+    }
+
+    private static func loadingDecisionRows() -> [PopoverMetric] {
+        [
+            PopoverMetric(label: "Estimated depletion", value: "Loading"),
+            PopoverMetric(label: "Pace vs. budget", value: "Loading"),
+            PopoverMetric(label: "Plan", value: "Loading"),
+            PopoverMetric(label: "Billing status", value: "Status unavailable")
+        ]
     }
 
     private static func makeSeries(_ chart: ChartSeries) -> [PopoverForecastPoint] {
