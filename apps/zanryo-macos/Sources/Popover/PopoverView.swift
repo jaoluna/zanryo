@@ -4,7 +4,10 @@ struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
 
     private var model: PopoverDashboardModel {
-        PopoverDashboardModel.make(from: store.snapshot)
+        PopoverDashboardModel.make(
+            from: store.snapshot,
+            isRefreshing: store.isRefreshing
+        )
     }
 
     var body: some View {
@@ -43,13 +46,13 @@ struct PopoverView: View {
             Text(model.headerText.uppercased())
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(PopoverColor.secondaryForeground)
-                .accessibilityLabel(model.footerText)
+                .accessibilityLabel(model.headerAccessibilityText)
 
             if store.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
                     .tint(PopoverColor.secondaryForeground)
-                    .accessibilityLabel("Refreshing quota data")
+                    .accessibilityLabel(model.headerAccessibilityText)
             }
         }
         .padding(.horizontal, 16)
@@ -60,14 +63,15 @@ struct PopoverView: View {
         HStack(spacing: 0) {
             if let weekly = model.weekly {
                 quotaCell(weekly, valueColor: PopoverColor.accent)
+            } else {
+                loadingQuotaCell
             }
 
-            if let spark = model.spark {
-                Divider()
-                    .overlay(PopoverColor.divider)
-                    .padding(.vertical, 12)
-                quotaCell(spark, valueColor: PopoverColor.foreground)
-            }
+            Divider()
+                .overlay(PopoverColor.divider)
+                .padding(.vertical, 12)
+
+            quotaCell(model.spark, valueColor: PopoverColor.foreground)
         }
         .padding(.vertical, 4)
     }
@@ -81,7 +85,7 @@ struct PopoverView: View {
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(PopoverColor.secondaryForeground)
 
-            Text("\(quota.percentage)%")
+            Text(quota.valueText)
                 .font(.system(size: 30, weight: .semibold, design: .monospaced))
                 .foregroundStyle(valueColor)
 
@@ -96,23 +100,48 @@ struct PopoverView: View {
         .accessibilityLabel(quota.accessibilityDescription)
     }
 
+    private var loadingQuotaCell: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("WEEKLY")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+
+            Text("Loading")
+                .font(.system(size: 18, weight: .medium, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+
+            Text("RESET PENDING")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Weekly quota is loading")
+    }
+
     private var forecastSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(model.forecastTitle.uppercased())
+                Text("CURRENT CYCLE + FORECAST")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(PopoverColor.accent)
 
-                Spacer()
+                Spacer(minLength: 12)
 
-                Text(model.forecastConfidence.uppercased())
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(PopoverColor.secondaryForeground)
+                Text(model.forecastPaceText)
+                    .font(.system(size: 11, weight: .medium))
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(PopoverColor.foreground)
+                    .frame(maxWidth: 132, alignment: .trailing)
             }
 
-            Text(model.forecastPaceText)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(PopoverColor.foreground)
+            if !model.hasForecastProjection {
+                Text("Forecast will appear after more history.")
+                    .font(.caption)
+                    .foregroundStyle(PopoverColor.secondaryForeground)
+            }
 
             if model.forecastSeries.isEmpty {
                 Text("Forecast data will appear after quota history is collected.")
@@ -179,7 +208,7 @@ struct PopoverView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(store.isRefreshing)
-            .accessibilityLabel(store.isRefreshing ? "Refreshing quota data" : "Refresh quota data")
+            .accessibilityLabel(model.footerActionTitle)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)

@@ -11,6 +11,7 @@ final class PopoverDashboardModelTests: XCTestCase {
         )
 
         XCTAssertEqual(model.headerText, "Cached data")
+        XCTAssertEqual(model.forecastPaceText, "Collecting history")
         XCTAssertEqual(model.forecastTitle, "Collecting history")
         XCTAssertEqual(model.forecastConfidence, "Collecting")
         XCTAssertFalse(model.hasForecastProjection)
@@ -63,7 +64,7 @@ final class PopoverDashboardModelTests: XCTestCase {
         )
 
         XCTAssertEqual(model.weekly?.percentage, 15)
-        XCTAssertEqual(model.spark?.percentage, 88)
+        XCTAssertEqual(model.spark.percentage, 88)
         XCTAssertEqual(model.forecastTitle, "Estimated forecast")
         XCTAssertEqual(model.forecastPaceText, "Observed pace: 12.5%/day")
         XCTAssertEqual(model.decisionRows.map(\.label), [
@@ -86,7 +87,7 @@ final class PopoverDashboardModelTests: XCTestCase {
             "Weekly quota: 15 percent remaining. Resets in 5 days and 3 hours."
         )
         XCTAssertEqual(
-            stale.spark?.accessibilityDescription,
+            stale.spark.accessibilityDescription,
             "Spark quota: 88 percent remaining. Resets in 2 hours."
         )
         XCTAssertEqual(stale.footerText, "Cached data — may be out of date")
@@ -103,18 +104,36 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.weekly?.percentage, 15)
         XCTAssertEqual(model.weekly?.reset, "5d 3h")
         XCTAssertEqual(model.weekly?.resetSpoken, "5 days and 3 hours")
-        XCTAssertEqual(model.spark?.percentage, 88)
-        XCTAssertEqual(model.spark?.reset, "2h")
-        XCTAssertEqual(model.spark?.resetSpoken, "2 hours")
+        XCTAssertEqual(model.spark.percentage, 88)
+        XCTAssertEqual(model.spark.reset, "2h")
+        XCTAssertEqual(model.spark.resetSpoken, "2 hours")
     }
 
-    func testUnavailableSparkHasNoQuotaDisplay() {
+    func testUnavailableSparkRetainsAQuotaColumnWithResetFallback() {
         let model = PopoverDashboardModel.make(
             from: makeForecastSnapshot(status: .estimated, includeSpark: false),
             now: now
         )
 
-        XCTAssertNil(model.spark)
+        XCTAssertFalse(model.spark.isAvailable)
+        XCTAssertEqual(model.spark.valueText, "Unavailable")
+        XCTAssertEqual(model.spark.reset, "Unavailable")
+        XCTAssertEqual(
+            model.spark.accessibilityDescription,
+            "Spark quota unavailable. Reset time unavailable."
+        )
+    }
+
+    func testRefreshingDashboardUsesModelUpdatingStateAndAccessibilityText() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated, freshness: .stale),
+            now: now,
+            isRefreshing: true
+        )
+
+        XCTAssertEqual(model.headerText, "Updating")
+        XCTAssertEqual(model.headerAccessibilityText, "Updating Codex quota data")
+        XCTAssertEqual(model.footerText, "Updating Codex quota data")
     }
 
     func testDashboardUsesPlanAndBillingPresentationBoundary() {
