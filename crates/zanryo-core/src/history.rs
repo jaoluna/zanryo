@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{LimitKind, RateLimit, Result, ZanryoError};
+use crate::{AccountContext, LimitKind, PlanType, RateLimit, Result, ZanryoError};
 
 const SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS quota_samples (
 
 CREATE INDEX IF NOT EXISTS idx_quota_samples_observed
 ON quota_samples(observed_at);
+
+CREATE TABLE IF NOT EXISTS account_context (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    plan_type TEXT NOT NULL,
+    observed_at TEXT NOT NULL
+);
 ";
 
 #[derive(Clone)]
@@ -118,6 +124,55 @@ impl HistoryRepository {
             .map_err(storage_error)
     }
 
+    pub fn upsert_account_context(&self, context: &AccountContext) -> Result<()> {
+        if context.plan_type == PlanType::Unknown || context.observed_at.is_none() {
+            self.lock()?
+                .execute("DELETE FROM account_context WHERE singleton = 1", [])
+                .map_err(storage_error)?;
+            return Ok(());
+        }
+
+        let observed_at = context.observed_at.as_ref().expect("checked above");
+        self.lock()?
+            .execute(
+                "
+                INSERT INTO account_context (singleton, plan_type, observed_at)
+                VALUES (1, ?1, ?2)
+                ON CONFLICT(singleton) DO UPDATE SET
+                    plan_type = excluded.plan_type,
+                    observed_at = excluded.observed_at
+                ",
+                params![plan_type_name(context.plan_type), observed_at],
+            )
+            .map_err(storage_error)?;
+        Ok(())
+    }
+
+    pub fn latest_account_context(&self) -> Result<Option<AccountContext>> {
+        let connection = self.lock()?;
+        let stored: Option<(String, DateTime<Utc>)> = connection
+            .query_row(
+                "SELECT plan_type, observed_at FROM account_context WHERE singleton = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(storage_error)?;
+
+        let Some((plan_type, observed_at)) = stored else {
+            return Ok(None);
+        };
+        let plan_type = PlanType::from_app_server(&plan_type);
+        if plan_type == PlanType::Unknown {
+            connection
+                .execute("DELETE FROM account_context WHERE singleton = 1", [])
+                .map_err(storage_error)?;
+            return Ok(None);
+        }
+
+        Ok(Some(AccountContext::new(plan_type, observed_at)))
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, Connection>> {
         self.connection
             .lock()
@@ -171,6 +226,21 @@ fn kind_name(kind: &LimitKind) -> &'static str {
         LimitKind::Weekly => "weekly",
         LimitKind::Spark => "spark",
         LimitKind::Other => "other",
+    }
+}
+
+fn plan_type_name(plan_type: PlanType) -> &'static str {
+    match plan_type {
+        PlanType::Free => "free",
+        PlanType::Go => "go",
+        PlanType::Plus => "plus",
+        PlanType::Pro => "pro",
+        PlanType::ProLite => "pro_lite",
+        PlanType::Team => "team",
+        PlanType::Business => "business",
+        PlanType::Enterprise => "enterprise",
+        PlanType::Edu => "edu",
+        PlanType::Unknown => "unknown",
     }
 }
 

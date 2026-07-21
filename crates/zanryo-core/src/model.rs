@@ -3,6 +3,61 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Result, ZanryoError};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanType {
+    Free,
+    Go,
+    Plus,
+    Pro,
+    ProLite,
+    Team,
+    Business,
+    Enterprise,
+    Edu,
+    #[default]
+    Unknown,
+}
+
+impl PlanType {
+    pub fn from_app_server(value: &str) -> Self {
+        match value {
+            "free" => Self::Free,
+            "go" => Self::Go,
+            "plus" => Self::Plus,
+            "pro" => Self::Pro,
+            "pro_lite" => Self::ProLite,
+            "team" => Self::Team,
+            "business" => Self::Business,
+            "enterprise" => Self::Enterprise,
+            "edu" => Self::Edu,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AccountContext {
+    pub plan_type: PlanType,
+    pub observed_at: Option<DateTime<Utc>>,
+}
+
+impl AccountContext {
+    pub fn unknown() -> Self {
+        Self::default()
+    }
+
+    pub fn new(plan_type: PlanType, observed_at: DateTime<Utc>) -> Self {
+        match plan_type {
+            PlanType::Unknown => Self::unknown(),
+            _ => Self {
+                plan_type,
+                observed_at: Some(observed_at),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LimitKind {
