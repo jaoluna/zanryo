@@ -66,6 +66,94 @@ final class BridgeEnvelopeTests: XCTestCase {
         XCTAssertEqual(snapshot?.quota.spark?.remainingPercent, 88)
         XCTAssertEqual(snapshot?.forecast.confidence, .low)
         XCTAssertEqual(snapshot?.forecast.chart.forecast.count, 1)
+        XCTAssertNil(snapshot?.account)
+    }
+
+    func testDecodesKnownAccountPlanWithoutAccountIdentifier() throws {
+        let data = Data(
+            """
+            {
+              "schema_version": 1,
+              "ok": true,
+              "data": {
+                "quota": {
+                  "weekly": {
+                    "kind": "weekly",
+                    "limit_id": "codex",
+                    "remaining_percent": 15,
+                    "resets_at": "2026-07-25T12:00:00Z",
+                    "observed_at": "2026-07-20T09:00:00Z"
+                  },
+                  "spark": null,
+                  "other": [],
+                  "freshness": "fresh"
+                },
+                "forecast": {
+                  "status": "collecting_history",
+                  "confidence": "collecting",
+                  "consumed_per_day": null,
+                  "sustainable_per_day": null,
+                  "pace_difference": null,
+                  "estimated_depletion_at": null,
+                  "rate_range": null,
+                  "chart": { "observed": [], "forecast": [], "sustainable": [] }
+                },
+                "account": {
+                  "plan_type": "plus",
+                  "observed_at": "2026-07-20T09:00:00Z"
+                }
+              },
+              "error": null
+            }
+            """.utf8
+        )
+
+        let snapshot = try BridgeDecoder.decodeRequiredSnapshot(from: data)
+
+        XCTAssertEqual(snapshot.account?.planType, .plus)
+        XCTAssertNotNil(snapshot.account?.observedAt)
+    }
+
+    func testDecodesUnknownPlanAndMissingObservationTimestampSafely() throws {
+        let data = Data(
+            """
+            {
+              "schema_version": 1,
+              "ok": true,
+              "data": {
+                "quota": {
+                  "weekly": {
+                    "kind": "weekly",
+                    "limit_id": "codex",
+                    "remaining_percent": 15,
+                    "resets_at": "2026-07-25T12:00:00Z",
+                    "observed_at": "2026-07-20T09:00:00Z"
+                  },
+                  "spark": null,
+                  "other": [],
+                  "freshness": "fresh"
+                },
+                "forecast": {
+                  "status": "collecting_history",
+                  "confidence": "collecting",
+                  "consumed_per_day": null,
+                  "sustainable_per_day": null,
+                  "pace_difference": null,
+                  "estimated_depletion_at": null,
+                  "rate_range": null,
+                  "chart": { "observed": [], "forecast": [], "sustainable": [] }
+                },
+                "account": { "plan_type": "future_plan" }
+              },
+              "error": null
+            }
+            """.utf8
+        )
+
+        let snapshot = try BridgeDecoder.decodeRequiredSnapshot(from: data)
+
+        XCTAssertEqual(snapshot.account?.planType, .unknown)
+        XCTAssertNil(snapshot.account?.observedAt)
     }
 
     func testRejectsUnsupportedSchemaBeforeReadingData() {

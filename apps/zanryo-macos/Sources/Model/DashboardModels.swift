@@ -11,6 +11,54 @@ enum Freshness: String, Decodable, Sendable {
     case stale
 }
 
+enum PlanType: Equatable, Sendable, Decodable {
+    case free
+    case go
+    case plus
+    case pro
+    case proLite
+    case team
+    case business
+    case enterprise
+    case edu
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = Self.fromBridge(raw)
+    }
+
+    static func fromBridge(_ raw: String) -> PlanType {
+        switch raw {
+        case "free":
+            .free
+        case "go":
+            .go
+        case "plus":
+            .plus
+        case "pro":
+            .pro
+        case "pro_lite":
+            .proLite
+        case "team":
+            .team
+        case "business":
+            .business
+        case "enterprise":
+            .enterprise
+        case "edu":
+            .edu
+        default:
+            .unknown
+        }
+    }
+}
+
+struct AccountContext: Decodable, Equatable, Sendable {
+    let planType: PlanType
+    let observedAt: Date?
+}
+
 struct RateLimit: Decodable, Equatable, Sendable {
     let kind: LimitKind
     let limitId: String
@@ -74,4 +122,15 @@ struct ForecastReport: Decodable, Equatable, Sendable {
 struct DashboardSnapshot: Decodable, Equatable, Sendable {
     let quota: QuotaSnapshot
     let forecast: ForecastReport
+    let account: AccountContext?
+
+    init(
+        quota: QuotaSnapshot,
+        forecast: ForecastReport,
+        account: AccountContext? = nil
+    ) {
+        self.quota = quota
+        self.forecast = forecast
+        self.account = account
+    }
 }
