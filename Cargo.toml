@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = [
+    "apps/zanryo-cli",
+    "crates/zanryo-bridge",
+    "crates/zanryo-core",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"

@@ -1,0 +1,40 @@
+{
+  "id": 1,
+  "result": {
+    "rateLimits": {
+      "limitId": "codex",
+      "limitName": null,
+      "primary": {
+        "usedPercent": 85,
+        "windowDurationMins": 10080,
+        "resetsAt": 1784991600
+      },
+      "secondary": null
+    },
+    "rateLimitsByLimitId": {
+      "codex": {
+        "limitId": "codex",
+        "limitName": null,
+        "primary": {
+          "usedPercent": 85,
+          "windowDurationMins": 10080,
+          "resetsAt": 1784991600
+        },
+        "secondary": null,
+        "ignoredFutureField": {
+          "nested": true
+        }
+      },
+      "codex_bengalfox": {
+        "limitId": "codex_bengalfox",
+        "limitName": "GPT-5.3-Codex-Spark",
+        "primary": {
+          "usedPercent": 28,
+          "windowDurationMins": 10080,
+          "resetsAt": 1784995200
+        },
+        "secondary": null
+      }
+    }
+  }
+}
