@@ -71,6 +71,14 @@ pub struct ForecastEngine;
 
 impl ForecastEngine {
     pub fn calculate(samples: &[RateLimit], now: DateTime<Utc>) -> ForecastReport {
+        if samples.first().is_some_and(|first| {
+            samples
+                .iter()
+                .any(|sample| sample.provider != first.provider)
+        }) {
+            return collecting_report(Vec::new());
+        }
+
         let cycle = current_weekly_cycle(samples);
         let cleaned = remove_discontinuities(cycle);
 

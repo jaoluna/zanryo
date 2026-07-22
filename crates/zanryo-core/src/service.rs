@@ -13,6 +13,7 @@ const HISTORY_RETENTION_DAYS: i64 = 90;
 const ACCOUNT_CACHE_MAX_AGE_HOURS: i64 = 24;
 
 pub struct QuotaService<S> {
+    provider: ProviderId,
     source: Arc<S>,
     history: HistoryRepository,
     refresh_lock: Mutex<()>,
@@ -27,8 +28,9 @@ impl<S> QuotaService<S>
 where
     S: RateLimitSource + 'static,
 {
-    pub fn new(source: S, history: HistoryRepository) -> Self {
+    pub fn new(provider: ProviderId, source: S, history: HistoryRepository) -> Self {
         Self {
+            provider,
             source: Arc::new(source),
             history,
             refresh_lock: Mutex::new(()),
@@ -52,16 +54,14 @@ where
 
         match self.source.read_rate_limits().await {
             Ok(limits) => {
-                let snapshot = QuotaSnapshot::from_limits(
-                    ProviderId::OpenAi,
-                    limits.clone(),
-                    Freshness::Fresh,
-                )?;
+                let snapshot =
+                    QuotaSnapshot::from_limits(self.provider, limits.clone(), Freshness::Fresh)?;
                 let history = self.history.clone();
+                let provider = self.provider;
                 run_history_task(move || {
                     history.insert_limits(&limits)?;
                     history.prune_before(
-                        ProviderId::OpenAi,
+                        provider,
                         Utc::now() - Duration::days(HISTORY_RETENTION_DAYS),
                     )?;
                     Ok(())
@@ -81,20 +81,21 @@ where
 
     pub async fn cached(&self) -> Result<Option<QuotaSnapshot>> {
         let history = self.history.clone();
-        let limits = run_history_task(move || history.latest_limits(ProviderId::OpenAi)).await?;
+        let provider = self.provider;
+        let limits = run_history_task(move || history.latest_limits(provider)).await?;
 
         if limits.is_empty() {
             Ok(None)
         } else {
-            QuotaSnapshot::from_limits(ProviderId::OpenAi, limits, Freshness::Stale).map(Some)
+            QuotaSnapshot::from_limits(provider, limits, Freshness::Stale).map(Some)
         }
     }
 
     pub async fn forecast(&self, now: DateTime<Utc>) -> Result<ForecastReport> {
         let history = self.history.clone();
+        let provider = self.provider;
         let since = now - Duration::days(8);
-        let samples =
-            run_history_task(move || history.limits_since(ProviderId::OpenAi, since)).await?;
+        let samples = run_history_task(move || history.limits_since(provider, since)).await?;
         Ok(ForecastEngine::calculate(&samples, now))
     }
 
@@ -105,7 +106,7 @@ where
         } else {
             self.cached_account_context()
                 .await
-                .unwrap_or_else(|| AccountContext::unknown(ProviderId::OpenAi))
+                .unwrap_or_else(|| AccountContext::unknown(self.provider))
         };
         let forecast = self.forecast(now).await?;
         Ok(DashboardSnapshot {
@@ -117,7 +118,8 @@ where
 
     async fn cached_account_context(&self) -> Option<AccountContext> {
         let history = self.history.clone();
-        run_history_task(move || history.latest_account_context(ProviderId::OpenAi))
+        let provider = self.provider;
+        run_history_task(move || history.latest_account_context(provider))
             .await
             .ok()
             .flatten()
@@ -135,12 +137,12 @@ where
 
         let cached_account = self.cached_account_context().await;
         if !account_needs_refresh(cached_account.as_ref(), now) {
-            return cached_account.unwrap_or_else(|| AccountContext::unknown(ProviderId::OpenAi));
+            return cached_account.unwrap_or_else(|| AccountContext::unknown(self.provider));
         }
 
         let account = match self.source.read_account_plan().await {
             Ok(plan_type) => {
-                let account = AccountContext::new(ProviderId::OpenAi, plan_type, now);
+                let account = AccountContext::new(self.provider, plan_type, now);
                 let history = self.history.clone();
                 let persisted_account = account.clone();
                 let _ =
@@ -148,7 +150,7 @@ where
                         .await;
                 account
             }
-            Err(_) => cached_account.unwrap_or_else(|| AccountContext::unknown(ProviderId::OpenAi)),
+            Err(_) => cached_account.unwrap_or_else(|| AccountContext::unknown(self.provider)),
         };
         *self.last_account_outcome.write().await = Some(account.clone());
         self.account_generation.fetch_add(1, Ordering::Release);

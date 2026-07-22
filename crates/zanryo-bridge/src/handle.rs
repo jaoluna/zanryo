@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::runtime::{Builder, Runtime};
 use zanryo_core::{
-    CodexAppServer, DashboardSnapshot, HistoryRepository, QuotaService, ZanryoError,
+    CodexAppServer, DashboardSnapshot, HistoryRepository, ProviderId, QuotaService, ZanryoError,
     cached_dashboard, resolve_codex_path,
 };
 
@@ -64,7 +64,7 @@ impl BridgeHandle {
             .history
             .as_ref()
             .ok_or_else(|| BridgeError::internal("history is unavailable"))?;
-        cached_dashboard(history, chrono::Utc::now()).map_err(BridgeError::from)
+        cached_dashboard(history, ProviderId::OpenAi, chrono::Utc::now()).map_err(BridgeError::from)
     }
 
     pub fn refresh(&self) -> Result<DashboardSnapshot, BridgeError> {
@@ -108,7 +108,7 @@ impl BridgeHandle {
             .as_ref()
             .ok_or_else(|| BridgeError::internal("history is unavailable"))?
             .clone();
-        let service = Arc::new(QuotaService::new(source, history));
+        let service = Arc::new(QuotaService::new(ProviderId::OpenAi, source, history));
         *self
             .service
             .lock()

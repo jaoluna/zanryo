@@ -50,7 +50,9 @@ fn cached_dashboard_combines_latest_quota_with_history_forecast() {
     ];
     history.insert_limits(&samples).unwrap();
 
-    let dashboard = cached_dashboard(&history, now).unwrap().unwrap();
+    let dashboard = cached_dashboard(&history, ProviderId::OpenAi, now)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(dashboard.quota.freshness, Freshness::Stale);
     assert_eq!(dashboard.quota.weekly.remaining_percent, 76.0);
@@ -75,7 +77,9 @@ fn dashboard_serialization_preserves_legacy_public_shape() {
         ])
         .unwrap();
 
-    let dashboard = cached_dashboard(&history, now).unwrap().unwrap();
+    let dashboard = cached_dashboard(&history, ProviderId::OpenAi, now)
+        .unwrap()
+        .unwrap();
     let value = serde_json::to_value(&dashboard).unwrap();
     let quota = value["quota"].as_object().unwrap();
 

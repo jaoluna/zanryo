@@ -96,11 +96,35 @@ fn sample_limits() -> Vec<RateLimit> {
     ]
 }
 
+fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 7, 20, hour, minute, 0).unwrap()
+}
+
+fn weekly(
+    provider: ProviderId,
+    observed_at: chrono::DateTime<Utc>,
+    remaining_percent: f64,
+) -> RateLimit {
+    RateLimit::new(
+        provider,
+        LimitKind::Weekly,
+        "codex",
+        remaining_percent,
+        at(10, 0) + Duration::days(5),
+        observed_at,
+    )
+    .unwrap()
+}
+
 #[tokio::test]
 async fn successful_refresh_is_fresh_and_persisted() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history.clone());
+    let service = QuotaService::new(
+        ProviderId::OpenAi,
+        FakeSource::succeeding(sample_limits()),
+        history.clone(),
+    );
 
     let snapshot = service.refresh().await.unwrap();
 
@@ -117,7 +141,7 @@ async fn failed_refresh_returns_existing_history_as_stale() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
     history.insert_limits(&sample_limits()).unwrap();
-    let service = QuotaService::new(FakeSource::failing(), history);
+    let service = QuotaService::new(ProviderId::OpenAi, FakeSource::failing(), history);
 
     let snapshot = service.refresh().await.unwrap();
 
@@ -129,7 +153,7 @@ async fn failed_refresh_returns_existing_history_as_stale() {
 async fn failed_refresh_without_history_returns_source_error() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let service = QuotaService::new(FakeSource::failing(), history);
+    let service = QuotaService::new(ProviderId::OpenAi, FakeSource::failing(), history);
 
     let error = service.refresh().await.unwrap_err();
 
@@ -143,7 +167,7 @@ async fn concurrent_refreshes_share_one_source_read() {
     let mut source = FakeSource::succeeding(sample_limits());
     source.delay = StdDuration::from_millis(30);
     let reads = Arc::clone(&source.reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
 
     let (first, second) = tokio::join!(service.refresh(), service.refresh());
 
@@ -188,7 +212,11 @@ async fn forecast_uses_persisted_weekly_history() {
         .unwrap(),
     ];
     history.insert_limits(&samples).unwrap();
-    let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history);
+    let service = QuotaService::new(
+        ProviderId::OpenAi,
+        FakeSource::succeeding(sample_limits()),
+        history,
+    );
 
     let report = service.forecast(now).await.unwrap();
 
@@ -197,11 +225,35 @@ async fn forecast_uses_persisted_weekly_history() {
 }
 
 #[tokio::test]
+async fn openai_service_forecast_ignores_claude_history() {
+    let history = HistoryRepository::open(":memory:").unwrap();
+    history
+        .insert_limits(&[
+            weekly(ProviderId::OpenAi, at(8, 0), 100.0),
+            weekly(ProviderId::OpenAi, at(9, 0), 99.5),
+            weekly(ProviderId::OpenAi, at(10, 0), 99.0),
+            weekly(ProviderId::Claude, at(8, 0), 100.0),
+            weekly(ProviderId::Claude, at(9, 0), 20.0),
+            weekly(ProviderId::Claude, at(10, 0), 0.0),
+        ])
+        .unwrap();
+
+    let service = QuotaService::new(
+        ProviderId::OpenAi,
+        FakeSource::succeeding(sample_limits()),
+        history,
+    );
+    let report = service.forecast(at(10, 0)).await.unwrap();
+
+    assert!(report.consumed_per_day.unwrap() < 20.0);
+}
+
+#[tokio::test]
 async fn refresh_dashboard_returns_matching_quota_and_forecast() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
     let source = FakeSource::succeeding(sample_limits());
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
@@ -223,7 +275,11 @@ async fn refresh_dashboard_returns_matching_quota_and_forecast() {
 async fn fresh_dashboard_includes_and_persists_the_account_plan() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history.clone());
+    let service = QuotaService::new(
+        ProviderId::OpenAi,
+        FakeSource::succeeding(sample_limits()),
+        history.clone(),
+    );
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
@@ -249,7 +305,7 @@ async fn fresh_dashboard_reuses_a_plan_cached_less_than_24_hours_ago() {
         .unwrap();
     let source = FakeSource::succeeding(sample_limits());
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
@@ -272,7 +328,7 @@ async fn failed_account_read_keeps_the_fresh_quota_and_cached_plan() {
     let mut source = FakeSource::succeeding(sample_limits());
     source.account_fail = true;
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
@@ -288,7 +344,7 @@ async fn concurrent_fresh_dashboards_share_one_account_read() {
     let mut source = FakeSource::succeeding(sample_limits());
     source.delay = StdDuration::from_millis(30);
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let (first, second) = tokio::join!(
@@ -309,7 +365,7 @@ async fn concurrent_account_rpc_failure_without_cache_shares_one_unknown_outcome
     source.account_fail = true;
     source.delay = StdDuration::from_millis(30);
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let (first, second) = tokio::join!(
@@ -344,7 +400,7 @@ async fn concurrent_account_rpc_failure_shares_the_cached_plan_outcome() {
     source.account_fail = true;
     source.delay = StdDuration::from_millis(30);
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
 
     let (first, second) = tokio::join!(
         service.refresh_dashboard(now),
@@ -363,7 +419,7 @@ async fn sequential_account_rpc_failures_retry_after_a_shared_outcome() {
     let mut source = FakeSource::succeeding(sample_limits());
     source.account_fail = true;
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let first = service.refresh_dashboard(now).await.unwrap();
@@ -381,7 +437,7 @@ async fn stale_dashboard_does_not_read_the_account_plan() {
     history.insert_limits(&sample_limits()).unwrap();
     let source = FakeSource::failing();
     let account_reads = Arc::clone(&source.account_reads);
-    let service = QuotaService::new(source, history);
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();

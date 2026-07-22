@@ -167,7 +167,7 @@ async fn build_service() -> CliResult<QuotaService<CodexAppServer>> {
     })?;
     let source = CodexAppServer::spawn(codex_path).await?;
     let history = HistoryRepository::open_default()?;
-    Ok(QuotaService::new(source, history))
+    Ok(QuotaService::new(ProviderId::OpenAi, source, history))
 }
 
 fn codex_app_server_help_succeeds(path: &Path) -> bool {

@@ -12,8 +12,22 @@ fn weekly(
     remaining_percent: f64,
     resets_at: DateTime<Utc>,
 ) -> RateLimit {
-    RateLimit::new(
+    weekly_for(
         ProviderId::OpenAi,
+        observed_at,
+        remaining_percent,
+        resets_at,
+    )
+}
+
+fn weekly_for(
+    provider: ProviderId,
+    observed_at: DateTime<Utc>,
+    remaining_percent: f64,
+    resets_at: DateTime<Utc>,
+) -> RateLimit {
+    RateLimit::new(
+        provider,
         LimitKind::Weekly,
         "codex",
         remaining_percent,
@@ -21,6 +35,24 @@ fn weekly(
         observed_at,
     )
     .unwrap()
+}
+
+#[test]
+fn mixed_provider_samples_are_never_blended() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(5);
+    let samples = vec![
+        weekly(now - Duration::hours(2), 100.0, reset),
+        weekly(now - Duration::hours(1), 95.0, reset),
+        weekly(now, 90.0, reset),
+        weekly_for(ProviderId::Claude, now, 0.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.status, ForecastStatus::CollectingHistory);
+    assert!(report.consumed_per_day.is_none());
+    assert!(report.chart.observed.is_empty());
 }
 
 #[test]
