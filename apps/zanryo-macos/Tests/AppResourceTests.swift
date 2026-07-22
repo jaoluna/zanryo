@@ -1,15 +1,11 @@
+import AppKit
 import CoreGraphics
 import ImageIO
 import XCTest
 
 final class AppResourceTests: XCTestCase {
     func testWordmarkResourceIsBundledWithTransparentAlpha() throws {
-        let testBundle = Bundle(for: Self.self)
-        let appBundleURL = testBundle.bundleURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let appBundle = try XCTUnwrap(Bundle(url: appBundleURL))
+        let appBundle = try applicationBundle()
 
         let wordmark = appBundle.url(
             forResource: "zanryo-wordmark",
@@ -28,5 +24,115 @@ final class AppResourceTests: XCTestCase {
                 && image.alphaInfo != .noneSkipLast,
             "The wordmark must keep transparency so the popover header does not render a solid block."
         )
+    }
+
+    func testStatusTailLayersAreBundledAtMenuBarHeight() throws {
+        let appBundle = try applicationBundle()
+
+        for resource in ["zanryo-status-body", "zanryo-status-tip"] {
+            let imageURL = try XCTUnwrap(
+                appBundle.url(forResource: "\(resource)@1x", withExtension: "png"),
+                "The \(resource) layer must be present in the application bundle."
+            )
+            let source = try XCTUnwrap(CGImageSourceCreateWithURL(imageURL as CFURL, nil))
+            let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+
+            XCTAssertTrue(hasAlpha(image), "The \(resource) layer must preserve alpha.")
+            XCTAssertGreaterThan(image.width, image.height)
+            XCTAssertLessThanOrEqual(image.height, 54, "@1x art must be compact enough for an 18pt status ornament.")
+        }
+    }
+
+    func testStatusTailBodyIsTemplateCompatibleAndTipContainsZanryoYellow() throws {
+        let appBundle = try applicationBundle()
+        let body = try image(named: "zanryo-status-body@1x", in: appBundle)
+        let tip = try image(named: "zanryo-status-tip@1x", in: appBundle)
+
+        XCTAssertTrue(isMonochromeMask(body), "The body layer must be tintable as a template image.")
+        XCTAssertTrue(
+            containsZanryoYellow(tip),
+            "The separate tail-tip layer must retain Zanryo yellow instead of becoming a white mask."
+        )
+    }
+
+    func testApplicationIconIsRegisteredAndUsesApprovedDragonArt() throws {
+        let appBundle = try applicationBundle()
+        XCTAssertEqual(appBundle.object(forInfoDictionaryKey: "CFBundleIconName") as? String, "AppIcon")
+
+        let assetCatalog = try XCTUnwrap(appBundle.url(forResource: "Assets", withExtension: "car"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: assetCatalog.path))
+
+        let icon = NSWorkspace.shared.icon(forFile: appBundle.bundlePath)
+        var proposedRect = NSRect(origin: .zero, size: icon.size)
+        let iconImage = try XCTUnwrap(
+            icon.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil)
+        )
+        XCTAssertTrue(
+            containsZanryoYellow(iconImage),
+            "The registered application icon must resolve to the approved dragon-Z rather than the generic app icon."
+        )
+    }
+
+    private func applicationBundle() throws -> Bundle {
+        let testBundle = Bundle(for: Self.self)
+        let appBundleURL = testBundle.bundleURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try XCTUnwrap(Bundle(url: appBundleURL))
+    }
+
+    private func image(named name: String, in bundle: Bundle) throws -> CGImage {
+        let imageURL = try XCTUnwrap(bundle.url(forResource: name, withExtension: "png"))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(imageURL as CFURL, nil))
+        return try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    }
+
+    private func hasAlpha(_ image: CGImage) -> Bool {
+        image.alphaInfo != .none
+            && image.alphaInfo != .noneSkipFirst
+            && image.alphaInfo != .noneSkipLast
+    }
+
+    private func isMonochromeMask(_ image: CGImage) -> Bool {
+        guard let bytes = normalizedRGBABytes(for: image) else { return false }
+        for offset in stride(from: 0, to: bytes.count, by: 4) {
+            let red = bytes[offset]
+            let green = bytes[offset + 1]
+            let blue = bytes[offset + 2]
+            if red != green || green != blue {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func containsZanryoYellow(_ image: CGImage) -> Bool {
+        guard let bytes = normalizedRGBABytes(for: image) else { return false }
+        return stride(from: 0, to: bytes.count, by: 4).contains { offset in
+            let red = Int(bytes[offset])
+            let green = Int(bytes[offset + 1])
+            let blue = Int(bytes[offset + 2])
+            return red > 180 && green > 120 && green < 220 && blue < 90
+        }
+    }
+
+    private func normalizedRGBABytes(for image: CGImage) -> [UInt8]? {
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+        guard let context = CGContext(
+            data: &bytes,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: image.width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        ) else {
+            return nil
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return bytes
     }
 }
