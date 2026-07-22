@@ -7,6 +7,7 @@ use std::ptr;
 
 use envelope::{BridgeError, failure, success};
 pub use handle::BridgeHandle;
+use zanryo_core::discover_installed_providers;
 
 fn json_pointer(json: String) -> *mut c_char {
     CString::new(json)
@@ -29,6 +30,11 @@ fn guarded_json(operation: impl FnOnce() -> String) -> *mut c_char {
             "Zanryo bridge operation panicked",
         )))),
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn zanryo_provider_discovery_json() -> *mut c_char {
+    guarded_json(|| serialize(&success(discover_installed_providers())))
 }
 
 #[unsafe(no_mangle)]

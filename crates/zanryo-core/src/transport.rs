@@ -13,6 +13,7 @@ use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, oneshot, watch};
 use tokio::time::timeout;
 
+use crate::provider::resolve_executable;
 use crate::{
     PlanType, RateLimit, Result, ZanryoError, decode_account_plan, decode_rate_limits,
     is_rate_limits_update,
@@ -168,11 +169,7 @@ pub fn resolve_codex_path() -> Option<PathBuf> {
         "/Applications/ChatGPT.app/Contents/Resources/codex",
     ));
 
-    first_existing_file(candidates)
-}
-
-fn first_existing_file(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
-    candidates.into_iter().find(|candidate| candidate.is_file())
+    resolve_executable(candidates)
 }
 
 #[async_trait::async_trait]
@@ -339,19 +336,5 @@ mod tests {
         assert_eq!(request["method"], "initialize");
         assert_eq!(request["params"]["clientInfo"]["name"], "zanryo");
         assert_eq!(request["params"]["capabilities"]["experimentalApi"], true);
-    }
-
-    #[test]
-    fn first_existing_file_keeps_candidate_precedence() {
-        let directory = tempfile::tempdir().unwrap();
-        let first = directory.path().join("first-codex");
-        let second = directory.path().join("second-codex");
-        std::fs::write(&first, "").unwrap();
-        std::fs::write(&second, "").unwrap();
-
-        let selected =
-            first_existing_file([directory.path().join("missing"), first.clone(), second]);
-
-        assert_eq!(selected, Some(first));
     }
 }
