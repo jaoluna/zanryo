@@ -2,32 +2,40 @@ import AppKit
 
 @MainActor
 final class StatusItemContentView: NSView {
-    private enum Metrics {
-        static let height: CGFloat = 18
-        static let tailWidth: CGFloat = 93
-        static let moduleLeading: CGFloat = 21
-        static let trailingPadding: CGFloat = 4
+    struct TailLayout: Equatable {
+        let headWidth: CGFloat
+        let middleWidth: CGFloat
+        let tipWidth: CGFloat
+
+        var totalWidth: CGFloat {
+            headWidth + middleWidth + tipWidth
+        }
     }
 
-    private let bodyImageView = NSImageView()
-    private let tipImageView = NSImageView()
+    private enum Metrics {
+        static let height: CGFloat = 18
+        static let headWidth: CGFloat = 30
+        static let tipWidth: CGFloat = 12
+        static let sourceTailWidth: CGFloat = 93
+    }
+
+    private let bodyImage = StatusItemContentView.image(named: "zanryo-status-body@2x")
+    private let tipImage = StatusItemContentView.image(named: "zanryo-status-tip@2x")
     private let moduleStack = NSStackView()
     private(set) var presentation = StatusPresentation(modules: [])
+
+    var tailLayout: TailLayout {
+        TailLayout(
+            headWidth: Metrics.headWidth,
+            middleWidth: ceil(moduleStack.fittingSize.width),
+            tipWidth: Metrics.tipWidth
+        )
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         clipsToBounds = true
         setAccessibilityElement(true)
-
-        bodyImageView.image = Self.image(named: "zanryo-status-body@2x", isTemplate: true)
-        bodyImageView.imageScaling = .scaleAxesIndependently
-        bodyImageView.setAccessibilityElement(false)
-        addSubview(bodyImageView)
-
-        tipImageView.image = Self.image(named: "zanryo-status-tip@2x", isTemplate: false)
-        tipImageView.imageScaling = .scaleAxesIndependently
-        tipImageView.setAccessibilityElement(false)
-        addSubview(tipImageView)
 
         moduleStack.orientation = .horizontal
         moduleStack.alignment = .centerY
@@ -43,25 +51,29 @@ final class StatusItemContentView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        let moduleWidth = moduleStack.fittingSize.width
-        let width = max(Metrics.tailWidth, Metrics.moduleLeading + moduleWidth + Metrics.trailingPadding)
-        return NSSize(width: ceil(width), height: Metrics.height)
+        NSSize(width: ceil(tailLayout.totalWidth), height: Metrics.height)
     }
 
     override func layout() {
         super.layout()
         let bounds = self.bounds
-        let tailFrame = NSRect(x: 0, y: 0, width: Metrics.tailWidth, height: Metrics.height)
-        bodyImageView.frame = tailFrame
-        tipImageView.frame = tailFrame
-
         let moduleSize = moduleStack.fittingSize
         moduleStack.frame = NSRect(
-            x: Metrics.moduleLeading,
+            x: tailLayout.headWidth,
             y: floor((bounds.height - moduleSize.height) / 2),
             width: moduleSize.width,
             height: moduleSize.height
         )
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let layout = tailLayout
+        let originY = floor((bounds.height - Metrics.height) / 2)
+        let tailFrame = NSRect(x: 0, y: originY, width: layout.totalWidth, height: Metrics.height)
+
+        drawTailLayer(bodyImage, in: tailFrame, layout: layout, tint: .labelColor)
+        drawTailLayer(tipImage, in: tailFrame, layout: layout, tint: nil)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -83,6 +95,7 @@ final class StatusItemContentView: NSView {
 
         invalidateIntrinsicContentSize()
         needsLayout = true
+        needsDisplay = true
         layoutSubtreeIfNeeded()
     }
 
@@ -116,13 +129,81 @@ final class StatusItemContentView: NSView {
         return stack
     }
 
-    private static func image(named name: String, isTemplate: Bool) -> NSImage? {
+    private func drawTailLayer(
+        _ image: NSImage?,
+        in tailFrame: NSRect,
+        layout: TailLayout,
+        tint: NSColor?
+    ) {
+        guard let image else { return }
+        let sourceHead = NSRect(x: 0, y: 0, width: layout.headWidth, height: Metrics.height)
+        let sourceMiddle = NSRect(
+            x: layout.headWidth,
+            y: 0,
+            width: Metrics.sourceTailWidth - layout.headWidth - layout.tipWidth,
+            height: Metrics.height
+        )
+        let sourceTip = NSRect(
+            x: Metrics.sourceTailWidth - layout.tipWidth,
+            y: 0,
+            width: layout.tipWidth,
+            height: Metrics.height
+        )
+        let destinationHead = NSRect(
+            x: tailFrame.minX,
+            y: tailFrame.minY,
+            width: layout.headWidth,
+            height: Metrics.height
+        )
+        let destinationMiddle = NSRect(
+            x: destinationHead.maxX,
+            y: tailFrame.minY,
+            width: layout.middleWidth,
+            height: Metrics.height
+        )
+        let destinationTip = NSRect(
+            x: destinationMiddle.maxX,
+            y: tailFrame.minY,
+            width: layout.tipWidth,
+            height: Metrics.height
+        )
+
+        drawTailSegment(image, source: sourceHead, destination: destinationHead, tint: tint)
+        if layout.middleWidth > 0 {
+            drawTailSegment(image, source: sourceMiddle, destination: destinationMiddle, tint: tint)
+        }
+        drawTailSegment(image, source: sourceTip, destination: destinationTip, tint: tint)
+    }
+
+    private func drawTailSegment(
+        _ image: NSImage,
+        source: NSRect,
+        destination: NSRect,
+        tint: NSColor?
+    ) {
+        image.draw(
+            in: destination,
+            from: source,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: nil
+        )
+        guard let tint else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        tint.setFill()
+        destination.fill(using: .sourceIn)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func image(named name: String) -> NSImage? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url)
         else {
             return nil
         }
-        image.isTemplate = isTemplate
+        image.size = NSSize(width: Metrics.sourceTailWidth, height: Metrics.height)
         return image
     }
 }

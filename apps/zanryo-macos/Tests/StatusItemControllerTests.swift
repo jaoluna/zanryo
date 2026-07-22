@@ -56,6 +56,36 @@ final class StatusItemControllerTests: XCTestCase {
         XCTAssertFalse(button.isHighlighted)
     }
 
+    func testTailKeepsDragonCapsFixedWhileMiddleExpandsForMoreModules() {
+        let view = StatusItemContentView(frame: .zero)
+        let openAI = ProviderModule(
+            provider: .openAI,
+            remainingPercent: 15,
+            reset: "5d 3h",
+            resetSpoken: "5 days and 3 hours",
+            isStale: false
+        )
+        let claude = ProviderModule(
+            provider: .claude,
+            remainingPercent: 42,
+            reset: "2h",
+            resetSpoken: "2 hours",
+            isStale: false
+        )
+
+        view.update(StatusPresentation(modules: [openAI]))
+        let oneModuleLayout = view.tailLayout
+        let oneModuleWidth = view.intrinsicContentSize.width
+
+        view.update(StatusPresentation(modules: [openAI, claude]))
+        let twoModuleLayout = view.tailLayout
+
+        XCTAssertEqual(oneModuleLayout.headWidth, twoModuleLayout.headWidth)
+        XCTAssertEqual(oneModuleLayout.tipWidth, twoModuleLayout.tipWidth)
+        XCTAssertGreaterThan(twoModuleLayout.middleWidth, oneModuleLayout.middleWidth)
+        XCTAssertGreaterThan(view.intrinsicContentSize.width, oneModuleWidth)
+    }
+
     func testInvalidationIsIdempotent() {
         let controller = StatusItemController { _, _, _ in }
 
