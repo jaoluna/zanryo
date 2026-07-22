@@ -20,9 +20,9 @@ final class PopoverDashboardModelTests: XCTestCase {
             model.decisionRows,
             [
                 PopoverMetric(label: "Estimated depletion", value: "Collecting history"),
-                PopoverMetric(label: "Pace vs. budget", value: "Collecting history"),
-                PopoverMetric(label: "Plan", value: "Unknown"),
-                PopoverMetric(label: "Billing status", value: "Status unavailable")
+                PopoverMetric(label: "Projected at reset", value: "Collecting history"),
+                PopoverMetric(label: "Allowed pace", value: "Collecting history"),
+                PopoverMetric(label: "Forecast confidence", value: "Collecting")
             ]
         )
         XCTAssertTrue(
@@ -47,10 +47,10 @@ final class PopoverDashboardModelTests: XCTestCase {
 
         XCTAssertEqual(model.forecastTitle, "Estimated forecast")
         XCTAssertEqual(model.forecastConfidence, "Low")
-        XCTAssertEqual(model.forecastMetrics.first?.label, "Observed pace")
-        XCTAssertEqual(model.forecastMetrics.first?.value, "12.5/day")
-        XCTAssertEqual(model.forecastMetrics[safe: 1]?.label, "Sustainable pace")
-        XCTAssertEqual(model.forecastMetrics[safe: 1]?.value, "10.2/day")
+        XCTAssertEqual(model.forecastMetrics.first?.label, "Current pace")
+        XCTAssertEqual(model.forecastMetrics.first?.value, "12.5%/day · 2.6%/5h")
+        XCTAssertEqual(model.forecastMetrics[safe: 1]?.label, "Allowed pace")
+        XCTAssertEqual(model.forecastMetrics[safe: 1]?.value, "10.2%/day · 2.1%/5h")
         XCTAssertTrue(model.hasForecastProjection)
         XCTAssertTrue(model.forecastSeries.contains(where: { $0.kind == .observed }))
         XCTAssertTrue(model.forecastSeries.contains(where: { $0.kind == .forecast }))
@@ -66,9 +66,9 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.weekly?.percentage, 15)
         XCTAssertEqual(model.spark.percentage, 88)
         XCTAssertEqual(model.forecastTitle, "Estimated forecast")
-        XCTAssertEqual(model.forecastPaceText, "Observed pace: 12.5%/day")
+        XCTAssertEqual(model.forecastPaceText, "Current pace\n12.5%/day · 2.6%/5h")
         XCTAssertEqual(model.decisionRows.map(\.label), [
-            "Estimated depletion", "Pace vs. budget", "Plan", "Billing status"
+            "Estimated depletion", "Projected at reset", "Allowed pace", "Forecast confidence"
         ])
         XCTAssertEqual(model.footerActionTitle, "Refresh")
         XCTAssertFalse(model.footerText.contains("Manual refresh"))
@@ -100,10 +100,10 @@ final class PopoverDashboardModelTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(model.forecastSectionAccessibilityLabel, "Current cycle and forecast.")
+        XCTAssertEqual(model.forecastSectionAccessibilityLabel, "Weekly forecast.")
         XCTAssertEqual(
             model.chartAccessibilityLabel,
-            "Quota forecast chart. Observed usage, estimated forecast, and sustainable pace. Time points: start, today, reset."
+            "Quota chart. Yellow is observed remaining quota, red is the current-pace forecast, and gray is the weekly one hundred percent to zero percent budget pace."
         )
         XCTAssertEqual(model.loadingWeeklyAccessibilityLabel, "Weekly quota is loading")
     }
@@ -181,9 +181,9 @@ final class PopoverDashboardModelTests: XCTestCase {
             model.decisionRows,
             [
                 PopoverMetric(label: "Estimated depletion", value: "Loading"),
-                PopoverMetric(label: "Pace vs. budget", value: "Loading"),
-                PopoverMetric(label: "Plan", value: "Loading"),
-                PopoverMetric(label: "Billing status", value: "Status unavailable")
+                PopoverMetric(label: "Projected at reset", value: "Loading"),
+                PopoverMetric(label: "Allowed pace", value: "Loading"),
+                PopoverMetric(label: "Forecast confidence", value: "Loading")
             ]
         )
         XCTAssertEqual(model.account.billingStatus, "Status unavailable")
@@ -228,9 +228,9 @@ final class PopoverDashboardModelTests: XCTestCase {
             model.decisionRows,
             [
                 PopoverMetric(label: "Estimated depletion", value: localAbbreviatedDate(depletion)),
-                PopoverMetric(label: "Pace vs. budget", value: "2.3%/day over budget"),
-                PopoverMetric(label: "Plan", value: "Unknown"),
-                PopoverMetric(label: "Billing status", value: "Status unavailable")
+                PopoverMetric(label: "Projected at reset", value: "10% left"),
+                PopoverMetric(label: "Allowed pace", value: "4%/day · 0.8%/5h"),
+                PopoverMetric(label: "Forecast confidence", value: "Low")
             ]
         )
     }
@@ -251,16 +251,27 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertNotEqual(decision?.value, "2d")
     }
 
-    func testNegativePaceUsesUnderBudgetWording() {
+    func testDecisionRowsShowSafePaceTargetInsteadOfGapWording() {
         let model = PopoverDashboardModel.make(
-            from: makeForecastSnapshot(status: .estimated, paceDiff: -1.2),
+            from: makeForecastSnapshot(status: .estimated, sustainable: 8.4, paceDiff: -1.2),
             now: now
         )
 
         XCTAssertEqual(
-            model.decisionRows.first(where: { $0.label == "Pace vs. budget" })?.value,
-            "1.2%/day under budget"
+            model.decisionRows.first(where: { $0.label == "Allowed pace" })?.value,
+            "8.4%/day · 1.8%/5h"
         )
+    }
+
+    func testObservedPaceAlsoShowsEquivalentFiveHourPaceWithoutClaimingAWindow() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(status: .estimated, consumed: 24, sustainable: 12),
+            now: now
+        )
+
+        XCTAssertEqual(model.forecastPaceText, "Current pace\n24%/day · 5%/5h")
+        XCTAssertEqual(model.forecastMetrics.first?.value, "24%/day · 5%/5h")
+        XCTAssertEqual(model.forecastMetrics[safe: 1]?.value, "12%/day · 2.5%/5h")
     }
 
     private func makeForecastSnapshot(

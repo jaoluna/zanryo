@@ -24,7 +24,6 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Sources
-    resources:
       - path: Resources
     preBuildScripts:
       - path: ../../scripts/build-rust-macos.sh

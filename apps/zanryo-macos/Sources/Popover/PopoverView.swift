@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct PopoverView: View {
@@ -11,35 +12,26 @@ struct PopoverView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            VStack(spacing: 0) {
-                header
-                divider
-                quotaStrip
-                divider
-                forecastSurface
-                divider
-                decisionRows
-                divider
-                footer
-            }
-            .frame(maxWidth: .infinity)
+        VStack(spacing: 0) {
+            header
+            divider
+            quotaStrip
+            divider
+            forecastSurface
+            divider
+            decisionRows
+            metricExplanation
+            divider
+            footer
         }
-        .scrollIndicators(.hidden)
-        .frame(width: 360, height: 500)
+        .frame(width: 390, height: 590)
         .background(PopoverColor.background)
         .foregroundStyle(PopoverColor.foreground)
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image("zanryo-wordmark")
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(height: 17)
-                .accessibilityLabel(model.wordmarkAccessibilityLabel)
-                .accessibilityAddTraits(.isHeader)
+            wordmark
 
             Spacer()
 
@@ -56,7 +48,40 @@ struct PopoverView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, 11)
+    }
+
+    @ViewBuilder
+    private var wordmark: some View {
+        if let wordmarkImage {
+            Image(nsImage: wordmarkImage)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(height: 17)
+                .foregroundStyle(PopoverColor.foreground)
+                .accessibilityLabel(model.wordmarkAccessibilityLabel)
+                .accessibilityAddTraits(.isHeader)
+        } else {
+            Text("ZANRYO")
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .tracking(2.2)
+                .foregroundStyle(PopoverColor.foreground)
+                .accessibilityLabel(model.wordmarkAccessibilityLabel)
+                .accessibilityAddTraits(.isHeader)
+        }
+    }
+
+    private var wordmarkImage: NSImage? {
+        guard let url = Bundle.main.url(
+            forResource: "zanryo-wordmark",
+            withExtension: "png"
+        ) else {
+            return nil
+        }
+
+        return NSImage(contentsOf: url)
     }
 
     private var quotaStrip: some View {
@@ -96,14 +121,14 @@ struct PopoverView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(quota.accessibilityDescription)
     }
 
     private func quotaValueFont(for quota: PopoverDashboardModel.QuotaDisplay) -> Font {
         .system(
-            size: quota.isAvailable ? 30 : 16,
+            size: quota.isAvailable ? 28 : 16,
             weight: quota.isAvailable ? .semibold : .medium,
             design: .monospaced
         )
@@ -125,7 +150,7 @@ struct PopoverView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(model.loadingWeeklyAccessibilityLabel)
     }
@@ -133,17 +158,13 @@ struct PopoverView: View {
     private var forecastSurface: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("CURRENT CYCLE + FORECAST")
+                Text("WEEKLY FORECAST")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(PopoverColor.accent)
 
                 Spacer(minLength: 12)
 
-                Text(model.forecastPaceText)
-                    .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(PopoverColor.foreground)
-                    .frame(maxWidth: 132, alignment: .trailing)
+                forecastPaceHeader
             }
 
             if !model.hasForecastProjection {
@@ -165,10 +186,46 @@ struct PopoverView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.vertical, 9)
         .background(PopoverColor.forecastSurface)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(model.forecastSectionAccessibilityLabel)
+    }
+
+    private var forecastPaceHeader: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(forecastPaceHeaderTitle.uppercased())
+                .font(.system(size: 8.6, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+
+            Text(forecastPaceHeaderValue)
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .frame(maxWidth: 178, alignment: .trailing)
+        .accessibilityLabel(model.forecastPaceText.replacingOccurrences(of: "\n", with: ", "))
+    }
+
+    private var forecastPaceHeaderTitle: String {
+        forecastPaceTextParts.title
+    }
+
+    private var forecastPaceHeaderValue: String {
+        forecastPaceTextParts.value
+    }
+
+    private var forecastPaceTextParts: (title: String, value: String) {
+        let parts = model.forecastPaceText
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .map(String.init)
+
+        if parts.count == 2 {
+            return (parts[0], parts[1])
+        }
+
+        return ("Forecast", model.forecastPaceText)
     }
 
     private var decisionRows: some View {
@@ -187,7 +244,7 @@ struct PopoverView: View {
                         .foregroundStyle(PopoverColor.foreground)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 9)
+                .padding(.vertical, 7)
 
                 if index < model.decisionRows.count - 1 {
                     Divider()
@@ -196,6 +253,17 @@ struct PopoverView: View {
                 }
             }
         }
+    }
+
+    private var metricExplanation: some View {
+        Text("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly 100% to 0% budget pace.")
+            .font(.system(size: 10.2, weight: .medium))
+            .foregroundStyle(PopoverColor.secondaryForeground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(PopoverColor.forecastSurface.opacity(0.55))
+            .accessibilityLabel("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly one hundred percent to zero percent budget pace.")
     }
 
     private var footer: some View {
@@ -225,7 +293,7 @@ struct PopoverView: View {
             .accessibilityLabel(model.footerActionTitle)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 11)
+        .padding(.vertical, 9)
     }
 
     private var divider: some View {
@@ -240,6 +308,14 @@ enum PopoverColor {
     static let foreground = Color(red: 248 / 255, green: 243 / 255, blue: 232 / 255)
     static let secondaryForeground = Color(red: 176 / 255, green: 182 / 255, blue: 193 / 255)
     static let chartMuted = Color(red: 121 / 255, green: 128 / 255, blue: 139 / 255)
+    static let chartSol = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
+    static let chartTerra = Color(red: 71 / 255, green: 143 / 255, blue: 255 / 255)
+    static let chartLuna = Color(red: 148 / 255, green: 156 / 255, blue: 170 / 255)
+    static let chartModel55 = Color(red: 78 / 255, green: 201 / 255, blue: 128 / 255)
+    static let chartDepletion = Color(red: 255 / 255, green: 91 / 255, blue: 91 / 255)
+    static let chartGrid = Color.white.opacity(0.10)
+    static let chartSurface = Color.black.opacity(0.14)
+    static let chartForecastFill = Color(red: 255 / 255, green: 91 / 255, blue: 91 / 255).opacity(0.13)
     static let accent = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
     static let divider = Color.white.opacity(0.12)
     static let warning = Color(red: 255 / 255, green: 163 / 255, blue: 163 / 255)

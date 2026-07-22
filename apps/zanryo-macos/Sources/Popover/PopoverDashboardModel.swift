@@ -150,8 +150,8 @@ struct PopoverDashboardModel: Equatable, Sendable {
             if let consumedPerDay = dashboard.forecast.consumedPerDay {
                 metrics.append(
                     PopoverMetric(
-                        label: "Observed pace",
-                        value: "\(formatPercent(consumedPerDay))/day"
+                        label: "Current pace",
+                        value: paceValue(consumedPerDay)
                     )
                 )
             }
@@ -159,18 +159,17 @@ struct PopoverDashboardModel: Equatable, Sendable {
             if let sustainablePerDay = dashboard.forecast.sustainablePerDay {
                 metrics.append(
                     PopoverMetric(
-                        label: "Sustainable pace",
-                        value: "\(formatPercent(sustainablePerDay))/day"
+                        label: "Allowed pace",
+                        value: paceValue(sustainablePerDay)
                     )
                 )
             }
 
             if let paceDifference = dashboard.forecast.paceDifference {
-                let sign = paceDifference >= 0 ? "+" : ""
                 metrics.append(
                     PopoverMetric(
                         label: "Pace difference",
-                        value: "\(sign)\(formatPercent(paceDifference))/day"
+                        value: signedPaceValue(paceDifference)
                     )
                 )
             }
@@ -201,8 +200,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
         }
 
         let decisionRows = makeDecisionRows(
-            forecast: dashboard.forecast,
-            account: dashboard.account
+            forecast: dashboard.forecast
         )
         let series = makeSeries(dashboard.forecast.chart)
         let updateState = makeUpdateState(
@@ -251,17 +249,17 @@ struct PopoverDashboardModel: Equatable, Sendable {
         )
     }
 
-    private static let forecastSectionAccessibilityText = "Current cycle and forecast."
-    private static let chartAccessibilityText = "Quota forecast chart. Observed usage, estimated forecast, and sustainable pace. Time points: start, today, reset."
+    private static let forecastSectionAccessibilityText = "Weekly forecast."
+    private static let chartAccessibilityText = "Quota chart. Yellow is observed remaining quota, red is the current-pace forecast, and gray is the weekly one hundred percent to zero percent budget pace."
     private static let loadingWeeklyAccessibilityText = "Weekly quota is loading"
     private static let refreshErrorAccessibilityText = "Refresh error"
 
     private static func loadingDecisionRows() -> [PopoverMetric] {
         [
             PopoverMetric(label: "Estimated depletion", value: "Loading"),
-            PopoverMetric(label: "Pace vs. budget", value: "Loading"),
-            PopoverMetric(label: "Plan", value: "Loading"),
-            PopoverMetric(label: "Billing status", value: "Status unavailable")
+            PopoverMetric(label: "Projected at reset", value: "Loading"),
+            PopoverMetric(label: "Allowed pace", value: "Loading"),
+            PopoverMetric(label: "Forecast confidence", value: "Loading")
         ]
     }
 
@@ -313,26 +311,26 @@ struct PopoverDashboardModel: Equatable, Sendable {
         )
     }
 
-    private static func makeDecisionRows(
-        forecast: ForecastReport,
-        account: AccountContext?
-    ) -> [PopoverMetric] {
+    private static func makeDecisionRows(forecast: ForecastReport) -> [PopoverMetric] {
         let forecastUnavailableText = forecast.status == .collectingHistory
             ? "Collecting history"
             : "Estimating…"
         let depletion = forecast.status == .estimated
             ? forecast.estimatedDepletionAt.map(formatAbsoluteDate) ?? forecastUnavailableText
             : forecastUnavailableText
-        let pace = forecast.status == .estimated
-            ? forecast.paceDifference.map(paceDescription) ?? forecastUnavailableText
+        let allowedPace = forecast.status == .estimated
+            ? forecast.sustainablePerDay.map(paceValue) ?? forecastUnavailableText
+            : forecastUnavailableText
+        let confidence = confidenceLabel(forecast.confidence)
+        let projectedAtReset = forecast.status == .estimated
+            ? projectedAtResetDescription(forecast.chart.forecast.last?.remainingPercent)
             : forecastUnavailableText
 
-        let account = makeAccountDisplay(account)
         return [
             PopoverMetric(label: "Estimated depletion", value: depletion),
-            PopoverMetric(label: "Pace vs. budget", value: pace),
-            PopoverMetric(label: "Plan", value: account.plan),
-            PopoverMetric(label: "Billing status", value: account.billingStatus)
+            PopoverMetric(label: "Projected at reset", value: projectedAtReset),
+            PopoverMetric(label: "Allowed pace", value: allowedPace),
+            PopoverMetric(label: "Forecast confidence", value: confidence)
         ]
     }
 
@@ -369,9 +367,12 @@ struct PopoverDashboardModel: Equatable, Sendable {
         return formatter.string(from: date)
     }
 
-    private static func paceDescription(_ paceDifference: Double) -> String {
-        let direction = paceDifference >= 0 ? "over budget" : "under budget"
-        return "\(formatPercent(abs(paceDifference)))%/day \(direction)"
+    private static func projectedAtResetDescription(_ remainingPercent: Double?) -> String {
+        guard let remainingPercent else {
+            return "Estimating…"
+        }
+
+        return "\(formatPercent(clampPercent(remainingPercent)))% left"
     }
 
     private static func forecastPaceText(for forecast: ForecastReport) -> String {
@@ -383,7 +384,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
             return "Estimating observed pace"
         }
 
-        return "Observed pace: \(formatPercent(consumedPerDay))%/day"
+        return "Current pace\n\(paceValue(consumedPerDay))"
     }
 
     private static func unavailableSparkDisplay() -> QuotaDisplay {
@@ -449,7 +450,23 @@ struct PopoverDashboardModel: Equatable, Sendable {
 
     private static func formatPercent(_ value: Double) -> String {
         let rounded = (value * 10).rounded() / 10
+        if rounded.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", rounded)
+        }
         return String(format: "%.1f", rounded)
+    }
+
+    private static func paceValue(_ perDay: Double) -> String {
+        "\(formatPercent(perDay))%/day · \(formatPercent(perFiveHours(perDay)))%/5h"
+    }
+
+    private static func signedPaceValue(_ perDay: Double) -> String {
+        let sign = perDay >= 0 ? "+" : "-"
+        return "\(sign)\(paceValue(abs(perDay)))"
+    }
+
+    private static func perFiveHours(_ perDay: Double) -> Double {
+        perDay * 5 / 24
     }
 
     private static func clampPercent(_ value: Double) -> Double {
