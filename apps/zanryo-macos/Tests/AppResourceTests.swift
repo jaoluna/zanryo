@@ -63,6 +63,10 @@ final class AppResourceTests: XCTestCase {
             XCTAssertTrue(hasAlpha(glyph), "The \(resource) mark must preserve transparency.")
             XCTAssertTrue(isMonochromeMask(glyph), "The \(resource) mark must remain tintable in both status-bar appearances.")
             XCTAssertEqual(glyph.width, glyph.height)
+            XCTAssertTrue(
+                hasTransparentBackgroundAndVisibleMark(glyph),
+                "The \(resource) mark must not turn its full square canvas into a template block."
+            )
         }
     }
 
@@ -126,6 +130,20 @@ final class AppResourceTests: XCTestCase {
             let blue = Int(bytes[offset + 2])
             return red > 180 && green > 120 && green < 220 && blue < 90
         }
+    }
+
+    private func hasTransparentBackgroundAndVisibleMark(_ image: CGImage) -> Bool {
+        guard let bytes = normalizedRGBABytes(for: image) else { return false }
+        let alphaValues = stride(from: 3, to: bytes.count, by: 4).map { bytes[$0] }
+        guard let maximumAlpha = alphaValues.max(), maximumAlpha > 200 else { return false }
+
+        let cornerOffsets = [
+            3,
+            (image.width - 1) * 4 + 3,
+            (image.height - 1) * image.width * 4 + 3,
+            ((image.height * image.width) - 1) * 4 + 3,
+        ]
+        return cornerOffsets.allSatisfy { bytes[$0] < 8 }
     }
 
     private func normalizedRGBABytes(for image: CGImage) -> [UInt8]? {
