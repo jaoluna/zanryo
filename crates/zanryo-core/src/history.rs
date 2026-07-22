@@ -12,6 +12,8 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 ";
 
+const CURRENT_SCHEMA_VERSION: i64 = 2;
+
 const V2_SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS quota_samples (
     id INTEGER PRIMARY KEY,
@@ -257,6 +259,15 @@ fn initialize_schema(connection: &mut Connection) -> Result<()> {
     connection
         .execute_batch(CONNECTION_SETTINGS)
         .map_err(storage_error)?;
+    let stored_schema_version: i64 = connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(storage_error)?;
+    if stored_schema_version > CURRENT_SCHEMA_VERSION {
+        return Err(ZanryoError::Storage(format!(
+            "history schema version {stored_schema_version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
+        )));
+    }
+
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage_error)?;
@@ -272,7 +283,7 @@ fn initialize_schema(connection: &mut Connection) -> Result<()> {
     validate_stored_providers(&transaction)?;
 
     transaction
-        .pragma_update(None, "user_version", 2)
+        .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
         .map_err(storage_error)?;
     transaction.commit().map_err(storage_error)
 }

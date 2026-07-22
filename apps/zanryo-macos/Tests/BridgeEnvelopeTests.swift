@@ -10,6 +10,10 @@ final class BridgeEnvelopeTests: XCTestCase {
         let providers = try BridgeDecoder.decodeInstallations(from: data)
 
         XCTAssertEqual(providers.map(\.provider), [.openAI, .claude])
+        XCTAssertEqual(
+            providers.map(\.executablePath),
+            ["/usr/local/bin/codex", "/Users/test/.local/bin/claude"]
+        )
     }
 
     func testDecodesEmptyProviderDiscovery() throws {
@@ -193,7 +197,7 @@ final class BridgeEnvelopeTests: XCTestCase {
             {
               "schema_version": 2,
               "ok": true,
-              "data": null,
+              "data": { "quota": ["this payload is deliberately malformed"] },
               "error": null
             }
             """.utf8

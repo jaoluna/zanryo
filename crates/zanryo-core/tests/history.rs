@@ -1,7 +1,9 @@
 use chrono::{Duration, TimeZone, Utc};
 use rusqlite::Connection;
 use tempfile::{NamedTempFile, tempdir};
-use zanryo_core::{HistoryRepository, LimitKind, ProviderId, RateLimit, ZanryoError};
+use zanryo_core::{
+    AccountContext, HistoryRepository, LimitKind, PlanType, ProviderId, RateLimit, ZanryoError,
+};
 
 const LEGACY_SCHEMA: &str = "
 CREATE TABLE quota_samples (
@@ -89,8 +91,8 @@ fn migrates_legacy_rows_to_openai_without_data_loss() {
     connection.execute_batch(LEGACY_SCHEMA).unwrap();
     connection
         .execute(
-            "INSERT INTO quota_samples (observed_at, limit_id, kind, remaining_percent, resets_at)
-             VALUES (?1, 'codex', 'weekly', 55, ?2)",
+            "INSERT INTO quota_samples (id, observed_at, limit_id, kind, remaining_percent, resets_at)
+             VALUES (314, ?1, 'codex', 'weekly', 55, ?2)",
             rusqlite::params![at(9, 0), at(17, 0)],
         )
         .unwrap();
@@ -111,8 +113,22 @@ fn migrates_legacy_rows_to_openai_without_data_loss() {
         .unwrap();
 
     assert_eq!(limits.len(), 1);
-    assert_eq!(limits[0].provider, ProviderId::OpenAi);
-    assert_eq!(account.provider, ProviderId::OpenAi);
+    assert_eq!(
+        limits[0],
+        RateLimit::new(
+            ProviderId::OpenAi,
+            LimitKind::Weekly,
+            "codex",
+            55.0,
+            at(17, 0),
+            at(9, 0),
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        account,
+        AccountContext::new(ProviderId::OpenAi, PlanType::Plus, at(9, 0))
+    );
     assert!(
         history
             .latest_limits(ProviderId::Claude)
@@ -121,11 +137,89 @@ fn migrates_legacy_rows_to_openai_without_data_loss() {
     );
     drop(history);
 
-    let user_version: i64 = Connection::open(file.path())
-        .unwrap()
+    let connection = Connection::open(file.path()).unwrap();
+    let migrated_id: i64 = connection
+        .query_row("SELECT id FROM quota_samples", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(migrated_id, 314);
+    let user_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
     assert_eq!(user_version, 2);
+}
+
+#[test]
+fn account_context_deletion_is_provider_scoped() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
+            PlanType::Plus,
+            at(9, 0),
+        ))
+        .unwrap();
+    history
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::Claude,
+            PlanType::Pro,
+            at(10, 0),
+        ))
+        .unwrap();
+
+    history
+        .upsert_account_context(&AccountContext::unknown(ProviderId::OpenAi))
+        .unwrap();
+
+    assert_eq!(
+        history.latest_account_context(ProviderId::OpenAi).unwrap(),
+        None
+    );
+    assert_eq!(
+        history.latest_account_context(ProviderId::Claude).unwrap(),
+        Some(AccountContext::new(
+            ProviderId::Claude,
+            PlanType::Pro,
+            at(10, 0),
+        ))
+    );
+}
+
+#[test]
+fn refuses_to_open_a_future_schema_without_modifying_it() {
+    let file = NamedTempFile::new().unwrap();
+    let connection = Connection::open(file.path()).unwrap();
+    connection
+        .execute_batch(
+            "
+            CREATE TABLE future_sentinel (value TEXT NOT NULL);
+            INSERT INTO future_sentinel (value) VALUES ('preserve me');
+            PRAGMA user_version = 3;
+            ",
+        )
+        .unwrap();
+    drop(connection);
+
+    match HistoryRepository::open(file.path()) {
+        Err(ZanryoError::Storage(message)) => {
+            assert_eq!(
+                message,
+                "history schema version 3 is newer than supported version 2"
+            );
+        }
+        Err(error) => panic!("expected future schema to be rejected, got {error}"),
+        Ok(_) => panic!("expected future schema to be rejected"),
+    }
+
+    let connection = Connection::open(file.path()).unwrap();
+    let user_version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    let sentinel: String = connection
+        .query_row("SELECT value FROM future_sentinel", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(user_version, 3);
+    assert_eq!(sentinel, "preserve me");
 }
 
 #[test]
