@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
+    @ObservedObject var registry: ProviderRegistry
 
     private var model: PopoverDashboardModel {
         PopoverDashboardModel.make(
@@ -15,14 +16,11 @@ struct PopoverView: View {
         VStack(spacing: 0) {
             header
             divider
-            quotaStrip
-            divider
-            forecastSurface
-            divider
-            decisionRows
-            metricExplanation
-            divider
-            footer
+            if registry.selectedProvider == .openAI {
+                openAIDashboard
+            } else {
+                unavailableProviderSurface
+            }
         }
         .frame(width: 390, height: 590)
         .background(PopoverColor.background)
@@ -30,15 +28,27 @@ struct PopoverView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             wordmark
+                .frame(width: 62, alignment: .leading)
 
-            Spacer()
+            providerSelectors
 
-            Text(model.headerText.uppercased())
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+            Spacer(minLength: 2)
+
+            if let selectedProvider = registry.selectedProvider {
+                Toggle("Show in menu bar", isOn: menuBarBinding(for: selectedProvider))
+                    .font(.system(size: 9.4, weight: .medium))
+                    .fixedSize()
+                    .accessibilityLabel("Show \(selectedProvider.displayName) in the menu bar")
+            }
+
+            Text(headerStatusText.uppercased())
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(PopoverColor.secondaryForeground)
-                .accessibilityLabel(model.headerAccessibilityText)
+                .accessibilityLabel(headerStatusAccessibilityText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
 
             if store.isRefreshing {
                 ProgressView()
@@ -49,6 +59,23 @@ struct PopoverView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
+    }
+
+    private var headerStatusText: String {
+        guard registry.selectedProvider == .openAI else {
+            return registry.selectedProvider == nil ? "No provider" : "Unavailable"
+        }
+        return model.headerText
+    }
+
+    private var headerStatusAccessibilityText: String {
+        guard let selectedProvider = registry.selectedProvider else {
+            return "No supported provider is installed."
+        }
+        guard selectedProvider == .openAI else {
+            return "(selectedProvider.displayName) quota data is unavailable."
+        }
+        return model.headerAccessibilityText
     }
 
     @ViewBuilder
@@ -82,6 +109,107 @@ struct PopoverView: View {
         }
 
         return NSImage(contentsOf: url)
+    }
+
+    private var providerSelectors: some View {
+        HStack(spacing: 4) {
+            ForEach(registry.installedProviders, id: \.self) { provider in
+                Button {
+                    registry.select(provider)
+                } label: {
+                    providerGlyph(for: provider)
+                        .frame(width: 20, height: 20)
+                        .background(
+                            registry.selectedProvider == provider
+                                ? PopoverColor.forecastSurface
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 4)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Show \(provider.displayName) details")
+                .accessibilityAddTraits(registry.selectedProvider == provider ? .isSelected : [])
+            }
+        }
+    }
+
+    private func menuBarBinding(for provider: ProviderId) -> Binding<Bool> {
+        Binding(
+            get: { registry.isEnabled(provider) },
+            set: { registry.setEnabled($0, for: provider) }
+        )
+    }
+
+    @ViewBuilder
+    private func providerGlyph(for provider: ProviderId) -> some View {
+        if let image = glyphImage(for: provider) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(PopoverColor.foreground)
+                .padding(4)
+        } else {
+            Text(provider == .openAI ? "O" : "A")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.foreground)
+        }
+    }
+
+    private func glyphImage(for provider: ProviderId) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: provider.glyphResourceName, withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
+
+    private var openAIDashboard: some View {
+        Group {
+            quotaStrip
+            divider
+            forecastSurface
+            divider
+            decisionRows
+            metricExplanation
+            divider
+            footer
+        }
+    }
+
+    private var unavailableProviderSurface: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Spacer(minLength: 24)
+
+            Text(unavailableProviderTitle)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+
+            Text(unavailableProviderDetail)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(PopoverColor.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(unavailableProviderTitle). \(unavailableProviderDetail)")
+    }
+
+    private var unavailableProviderTitle: String {
+        guard let selectedProvider = registry.selectedProvider else {
+            return "NO SUPPORTED PROVIDER FOUND"
+        }
+        return "\(selectedProvider.displayName.uppercased()) DATA UNAVAILABLE"
+    }
+
+    private var unavailableProviderDetail: String {
+        guard registry.selectedProvider != nil else {
+            return "Install Codex or Claude, then reopen Zanryo."
+        }
+        return "Quota collection is not available for this provider yet."
     }
 
     private var quotaStrip: some View {

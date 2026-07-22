@@ -119,7 +119,8 @@ struct Raster {
                 let alpha = pixels[offset + 3]
                 let isYellow = red > 170 && green > 90 && green < 230 && blue < 100 && red > green + 30
                 let visible = alpha > 12 && max(red, green, blue) > 24
-                guard visible, body != isYellow else { continue }
+                let belongsToLayer = body ? !isYellow : isYellow
+                guard visible, belongsToLayer else { continue }
 
                 if body {
                     result[offset] = 255
@@ -267,18 +268,18 @@ func renderProductionAssets() throws {
     let tail = try loadRaster(statusSource)
     let visibleTail = try tail.cropped(to: tail.visibleBounds(source: statusSource))
 
-    for scale in [1, 2, 3] {
-        let targetHeight = 18 * scale
-        let targetWidth = Int((CGFloat(visibleTail.width) / CGFloat(visibleTail.height) * CGFloat(targetHeight)).rounded(.up))
-        try writePNG(
-            try rendered(visibleTail.rendering(body: true), canvas: CGSize(width: targetWidth, height: targetHeight)),
-            to: resourcesDirectory.appendingPathComponent("zanryo-status-body@\(scale)x.png")
-        )
-        try writePNG(
-            try rendered(visibleTail.rendering(body: false), canvas: CGSize(width: targetWidth, height: targetHeight)),
-            to: resourcesDirectory.appendingPathComponent("zanryo-status-tip@\(scale)x.png")
-        )
-    }
+    // A single 3x PNG avoids Xcode flattening the `@1x/@2x/@3x` loose files
+    // into a 1x TIFF, which erased the very small yellow tip in the menu bar.
+    let targetHeight = 54
+    let targetWidth = Int((CGFloat(visibleTail.width) / CGFloat(visibleTail.height) * CGFloat(targetHeight)).rounded(.up))
+    try writePNG(
+        try rendered(visibleTail.rendering(body: true), canvas: CGSize(width: targetWidth, height: targetHeight)),
+        to: resourcesDirectory.appendingPathComponent("zanryo-status-body.png")
+    )
+    try writePNG(
+        try rendered(visibleTail.rendering(body: false), canvas: CGSize(width: targetWidth, height: targetHeight)),
+        to: resourcesDirectory.appendingPathComponent("zanryo-status-tip.png")
+    )
 
     let dragon = try loadRaster(dragonSource)
     let iconDirectory = resourcesDirectory.appendingPathComponent("Assets.xcassets/AppIcon.appiconset", isDirectory: true)

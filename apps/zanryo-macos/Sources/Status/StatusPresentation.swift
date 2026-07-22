@@ -12,7 +12,7 @@ struct ProviderModule: Equatable, Sendable {
     }
 
     var accessibilityLabel: String {
-        var label = "\(provider.accessibilityName) has \(remainingPercent) percent remaining. Resets in \(resetSpoken)."
+        var label = "\(provider.displayName) has \(remainingPercent) percent remaining. Resets in \(resetSpoken)."
         if isStale {
             label += " Data may be outdated."
         }
@@ -41,6 +41,7 @@ struct StatusPresentation: Equatable, Sendable {
     static func make(
         snapshot: DashboardSnapshot?,
         openAIEnabled: Bool = true,
+        isStaleOverride: Bool? = nil,
         now: Date = Date(),
         calendar: Calendar = .autoupdatingCurrent
     ) -> StatusPresentation {
@@ -57,7 +58,7 @@ struct StatusPresentation: Equatable, Sendable {
                     remainingPercent: Int(limit.remainingPercent.rounded()),
                     reset: reset.compact,
                     resetSpoken: reset.spoken,
-                    isStale: snapshot.quota.freshness == .stale
+                    isStale: isStaleOverride ?? (snapshot.quota.freshness == .stale)
                 )
             ]
         )
@@ -71,26 +72,6 @@ struct StatusPresentation: Equatable, Sendable {
                 || identifier.contains("fivehour")
                 || identifier.contains("5-hour")
                 || identifier.contains("5h")
-        }
-    }
-}
-
-private extension ProviderId {
-    var statusOrder: Int {
-        switch self {
-        case .openAI:
-            0
-        case .claude:
-            1
-        }
-    }
-
-    var accessibilityName: String {
-        switch self {
-        case .openAI:
-            "OpenAI"
-        case .claude:
-            "Claude"
         }
     }
 }

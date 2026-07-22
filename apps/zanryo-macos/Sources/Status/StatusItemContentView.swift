@@ -19,15 +19,16 @@ final class StatusItemContentView: NSView {
         static let sourceTailWidth: CGFloat = 93
     }
 
-    private let bodyImage = StatusItemContentView.image(named: "zanryo-status-body@2x")
-    private let tipImage = StatusItemContentView.image(named: "zanryo-status-tip@2x")
+    private let bodyImage = StatusItemContentView.tailImage(named: "zanryo-status-body")
+    private let tipImage = StatusItemContentView.tailImage(named: "zanryo-status-tip")
     private let moduleStack = NSStackView()
+    private var moduleSize = NSSize.zero
     private(set) var presentation = StatusPresentation(modules: [])
 
     var tailLayout: TailLayout {
         TailLayout(
             headWidth: Metrics.headWidth,
-            middleWidth: ceil(moduleStack.fittingSize.width),
+            middleWidth: ceil(moduleSize.width),
             tipWidth: Metrics.tipWidth
         )
     }
@@ -40,6 +41,7 @@ final class StatusItemContentView: NSView {
         moduleStack.orientation = .horizontal
         moduleStack.alignment = .centerY
         moduleStack.spacing = 8
+        moduleStack.translatesAutoresizingMaskIntoConstraints = false
         moduleStack.setAccessibilityElement(false)
         addSubview(moduleStack)
 
@@ -57,7 +59,6 @@ final class StatusItemContentView: NSView {
     override func layout() {
         super.layout()
         let bounds = self.bounds
-        let moduleSize = moduleStack.fittingSize
         moduleStack.frame = NSRect(
             x: tailLayout.headWidth,
             y: floor((bounds.height - moduleSize.height) / 2),
@@ -92,11 +93,11 @@ final class StatusItemContentView: NSView {
         for module in presentation.modules {
             moduleStack.addArrangedSubview(moduleView(for: module))
         }
+        moduleSize = moduleStack.fittingSize
 
         invalidateIntrinsicContentSize()
         needsLayout = true
         needsDisplay = true
-        layoutSubtreeIfNeeded()
     }
 
     private func moduleView(for module: ProviderModule) -> NSView {
@@ -107,10 +108,7 @@ final class StatusItemContentView: NSView {
         stack.setAccessibilityElement(false)
 
         let glyph = NSImageView()
-        glyph.image = NSImage(
-            systemSymbolName: module.provider.statusGlyph,
-            accessibilityDescription: module.provider.statusName
-        )
+        glyph.image = Self.glyphImage(named: module.provider.statusGlyph)
         glyph.contentTintColor = .labelColor
         glyph.imageScaling = .scaleProportionallyDown
         glyph.frame.size = NSSize(width: 11, height: 11)
@@ -197,7 +195,7 @@ final class StatusItemContentView: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func image(named name: String) -> NSImage? {
+    private static func tailImage(named name: String) -> NSImage? {
         guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
               let image = NSImage(contentsOf: url)
         else {
@@ -206,24 +204,25 @@ final class StatusItemContentView: NSView {
         image.size = NSSize(width: Metrics.sourceTailWidth, height: Metrics.height)
         return image
     }
+
+    private static func glyphImage(named name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url)
+        else {
+            return nil
+        }
+        image.isTemplate = true
+        image.size = NSSize(width: 11, height: 11)
+        return image
+    }
 }
 
 private extension ProviderId {
     var statusGlyph: String {
-        switch self {
-        case .openAI:
-            "circle.hexagongrid"
-        case .claude:
-            "circle"
-        }
+        glyphResourceName
     }
 
     var statusName: String {
-        switch self {
-        case .openAI:
-            "OpenAI"
-        case .claude:
-            "Claude"
-        }
+        displayName
     }
 }

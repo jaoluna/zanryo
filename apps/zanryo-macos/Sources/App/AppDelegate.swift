@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: ZanryoStore?
+    private var registry: ProviderRegistry?
     private var statusItemController: StatusItemController?
     private var popoverCoordinator: PopoverCoordinator?
     private var refreshTimer: Timer?
@@ -15,9 +16,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let bridge = try RustBridge()
             let store = ZanryoStore(provider: bridge)
-            let popoverCoordinator = PopoverCoordinator(store: store)
+            let registry = ProviderRegistry(discoverer: bridge)
+            let popoverCoordinator = PopoverCoordinator(store: store, registry: registry)
             let contextMenu = StatusItemContextMenu(
-                onRefresh: { Task { await store.refresh() } },
+                onRefresh: {
+                    Task {
+                        guard registry.shouldRefreshOpenAI else {
+                            return
+                        }
+                        await store.refresh()
+                    }
+                },
                 onQuit: { NSApp.terminate(nil) }
             )
             let statusItemController = StatusItemController { [weak popoverCoordinator] action, button, event in
@@ -42,12 +51,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             self.store = store
+            self.registry = registry
             self.popoverCoordinator = popoverCoordinator
             self.statusItemController = statusItemController
 
-            observeSnapshot(in: store)
+            observeStore(in: store, registry: registry)
+            observeStatus(in: registry, statusItemController: statusItemController)
+            observeRefreshEligibility(in: registry, store: store)
             installRefreshTimer()
-            Task { await store.start() }
+            Task { await registry.discover() }
         } catch {
             let statusItemController = StatusItemController(onAction: { _, _, _ in })
             statusItemController.update(StatusPresentation.make(snapshot: nil))
@@ -61,10 +73,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController?.invalidate()
     }
 
-    private func observeSnapshot(in store: ZanryoStore) {
+    private func observeStore(in store: ZanryoStore, registry: ProviderRegistry) {
         store.$snapshot
-            .sink { [weak statusItemController] snapshot in
-                statusItemController?.update(StatusPresentation.make(snapshot: snapshot))
+            .combineLatest(store.$lastError)
+            .sink { [weak registry] snapshot, error in
+                registry?.updateOpenAI(snapshot: snapshot, error: error)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observeStatus(
+        in registry: ProviderRegistry,
+        statusItemController: StatusItemController
+    ) {
+        registry.$statusPresentation
+            .sink { [weak statusItemController] presentation in
+                statusItemController?.update(presentation)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observeRefreshEligibility(in registry: ProviderRegistry, store: ZanryoStore) {
+        registry.$shouldRefreshOpenAI
+            .removeDuplicates()
+            .sink { shouldRefresh in
+                guard shouldRefresh else {
+                    return
+                }
+                Task { await store.start() }
             }
             .store(in: &cancellables)
     }
@@ -84,7 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc
     private func refreshTimerFired() {
-        guard let store else {
+        guard let store, registry?.shouldRefreshOpenAI == true else {
             return
         }
         Task { await store.refresh() }

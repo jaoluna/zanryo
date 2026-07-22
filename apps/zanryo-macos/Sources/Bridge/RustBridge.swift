@@ -5,7 +5,11 @@ protocol DashboardProviding: Sendable {
     func refresh() async throws -> DashboardSnapshot
 }
 
-actor RustBridge: DashboardProviding {
+protocol ProviderDiscovering: Sendable {
+    func discoverProviders() async throws -> [ProviderInstallation]
+}
+
+actor RustBridge: DashboardProviding, ProviderDiscovering {
     private final class Handle: @unchecked Sendable {
         let pointer: OpaquePointer
 

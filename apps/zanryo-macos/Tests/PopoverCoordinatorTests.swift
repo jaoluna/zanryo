@@ -6,11 +6,13 @@ import XCTest
 final class PopoverCoordinatorTests: XCTestCase {
     func testToggleAnchorsPopoverWithoutActivatingTheApp() throws {
         let store = ZanryoStore(provider: ImmediateDashboardProvider())
+        let registry = ProviderRegistry(discoverer: EmptyProviderDiscovery())
         let button = NSStatusBarButton(frame: NSRect(x: 0, y: 0, width: 96, height: 22))
         var events: [String] = []
         var behavior: NSPopover.Behavior?
         let coordinator = PopoverCoordinator(
             store: store,
+            registry: registry,
             showPopover: { popover, _ in
                 behavior = popover.behavior
                 events.append("show")
@@ -25,6 +27,7 @@ final class PopoverCoordinatorTests: XCTestCase {
 
     func testOutsideClickMonitorClosesPopoverAndTearsDownMonitor() throws {
         let store = ZanryoStore(provider: ImmediateDashboardProvider())
+        let registry = ProviderRegistry(discoverer: EmptyProviderDiscovery())
         let button = NSStatusBarButton(frame: NSRect(x: 0, y: 0, width: 96, height: 22))
         let monitorToken = NSObject()
         var outsideClickHandler: (() -> Void)?
@@ -32,6 +35,7 @@ final class PopoverCoordinatorTests: XCTestCase {
         var closeCount = 0
         let coordinator = PopoverCoordinator(
             store: store,
+            registry: registry,
             showPopover: { _, _ in },
             startOutsideClickMonitoring: { handler in
                 outsideClickHandler = handler
@@ -48,6 +52,12 @@ final class PopoverCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(closeCount, 1)
         XCTAssertTrue((removedMonitor as AnyObject) === monitorToken)
+    }
+}
+
+private actor EmptyProviderDiscovery: ProviderDiscovering {
+    func discoverProviders() async throws -> [ProviderInstallation] {
+        []
     }
 }
 

@@ -6,6 +6,7 @@ typealias OutsideClickHandler = @MainActor () -> Void
 @MainActor
 final class PopoverCoordinator: NSObject, NSPopoverDelegate {
     private let store: ZanryoStore
+    private let registry: ProviderRegistry
     private let popover: NSPopover
     private let showPopover: @MainActor (NSPopover, NSStatusBarButton) -> Void
     private let startOutsideClickMonitoring: @MainActor (@escaping OutsideClickHandler) -> Any?
@@ -16,12 +17,14 @@ final class PopoverCoordinator: NSObject, NSPopoverDelegate {
 
     init(
         store: ZanryoStore,
+        registry: ProviderRegistry,
         showPopover: @escaping @MainActor (NSPopover, NSStatusBarButton) -> Void = PopoverCoordinator.showAnchoredPopover,
         startOutsideClickMonitoring: @escaping @MainActor (@escaping OutsideClickHandler) -> Any? = PopoverCoordinator.startGlobalOutsideClickMonitor,
         stopOutsideClickMonitoring: @escaping @MainActor (Any) -> Void = { NSEvent.removeMonitor($0) },
         closePopover: @escaping @MainActor (NSPopover) -> Void = { $0.performClose(nil) }
     ) {
         self.store = store
+        self.registry = registry
         self.showPopover = showPopover
         self.startOutsideClickMonitoring = startOutsideClickMonitoring
         self.stopOutsideClickMonitoring = stopOutsideClickMonitoring
@@ -34,7 +37,7 @@ final class PopoverCoordinator: NSObject, NSPopoverDelegate {
         popover.animates = false
         popover.contentSize = NSSize(width: 390, height: 590)
         let hostingController = NSHostingController(
-            rootView: PopoverView(store: store)
+            rootView: PopoverView(store: store, registry: registry)
         )
         hostingController.view.frame = NSRect(origin: .zero, size: popover.contentSize)
         popover.contentViewController = hostingController
@@ -49,7 +52,12 @@ final class PopoverCoordinator: NSObject, NSPopoverDelegate {
         showPopover(popover, button)
         startOutsideClickMonitor()
         onVisibilityChanged?(true)
-        Task { await store.refreshAfterOpening() }
+        Task {
+            guard registry.shouldRefreshOpenAI else {
+                return
+            }
+            await store.refreshAfterOpening()
+        }
     }
 
     func close() {

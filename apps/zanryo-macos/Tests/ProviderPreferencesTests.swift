@@ -24,4 +24,15 @@ final class ProviderPreferencesTests: XCTestCase {
         XCTAssertFalse(preferences.isEnabled(.openAI, installed: false))
         XCTAssertNil(defaults.object(forKey: "providerEnabledOverrides"))
     }
+
+    func testExplicitOverrideSurvivesProviderDisappearanceAndReturn() {
+        let defaults = UserDefaults(suiteName: #function)!
+        defaults.removePersistentDomain(forName: #function)
+        let preferences = ProviderPreferences(defaults: defaults)
+
+        preferences.setEnabled(false, for: .claude)
+
+        XCTAssertFalse(preferences.isEnabled(.claude, installed: false))
+        XCTAssertFalse(preferences.isEnabled(.claude, installed: true))
+    }
 }

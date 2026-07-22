@@ -31,7 +31,7 @@ final class AppResourceTests: XCTestCase {
 
         for resource in ["zanryo-status-body", "zanryo-status-tip"] {
             let imageURL = try XCTUnwrap(
-                appBundle.url(forResource: "\(resource)@1x", withExtension: "png"),
+                appBundle.url(forResource: resource, withExtension: "png"),
                 "The \(resource) layer must be present in the application bundle."
             )
             let source = try XCTUnwrap(CGImageSourceCreateWithURL(imageURL as CFURL, nil))
@@ -39,20 +39,31 @@ final class AppResourceTests: XCTestCase {
 
             XCTAssertTrue(hasAlpha(image), "The \(resource) layer must preserve alpha.")
             XCTAssertGreaterThan(image.width, image.height)
-            XCTAssertLessThanOrEqual(image.height, 54, "@1x art must be compact enough for an 18pt status ornament.")
+            XCTAssertLessThanOrEqual(image.height, 54, "3x art must be compact enough for an 18pt status ornament.")
         }
     }
 
     func testStatusTailBodyIsTemplateCompatibleAndTipContainsZanryoYellow() throws {
         let appBundle = try applicationBundle()
-        let body = try image(named: "zanryo-status-body@1x", in: appBundle)
-        let tip = try image(named: "zanryo-status-tip@1x", in: appBundle)
+        let body = try image(named: "zanryo-status-body", in: appBundle)
+        let tip = try image(named: "zanryo-status-tip", in: appBundle)
 
         XCTAssertTrue(isMonochromeMask(body), "The body layer must be tintable as a template image.")
         XCTAssertTrue(
             containsZanryoYellow(tip),
             "The separate tail-tip layer must retain Zanryo yellow instead of becoming a white mask."
         )
+    }
+
+    func testRecognizableProviderGlyphsAreBundledAsTransparentMonochromeMarks() throws {
+        let appBundle = try applicationBundle()
+
+        for resource in ["openai-provider-glyph", "claude-provider-glyph"] {
+            let glyph = try image(named: resource, in: appBundle)
+            XCTAssertTrue(hasAlpha(glyph), "The \(resource) mark must preserve transparency.")
+            XCTAssertTrue(isMonochromeMask(glyph), "The \(resource) mark must remain tintable in both status-bar appearances.")
+            XCTAssertEqual(glyph.width, glyph.height)
+        }
     }
 
     func testApplicationIconIsRegisteredAndUsesApprovedDragonArt() throws {
