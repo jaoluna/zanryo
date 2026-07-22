@@ -17,16 +17,16 @@ pub fn cached_dashboard(
     history: &HistoryRepository,
     now: DateTime<Utc>,
 ) -> Result<Option<DashboardSnapshot>> {
-    let latest = history.latest_limits()?;
+    let latest = history.latest_limits(ProviderId::OpenAi)?;
     if latest.is_empty() {
         return Ok(None);
     }
 
     let quota = QuotaSnapshot::from_limits(ProviderId::OpenAi, latest, Freshness::Stale)?;
-    let samples = history.limits_since(now - Duration::days(8))?;
+    let samples = history.limits_since(ProviderId::OpenAi, now - Duration::days(8))?;
     let forecast = ForecastEngine::calculate(&samples, now);
     let account = history
-        .latest_account_context()?
+        .latest_account_context(ProviderId::OpenAi)?
         .unwrap_or_else(|| AccountContext::unknown(ProviderId::OpenAi));
 
     Ok(Some(DashboardSnapshot {

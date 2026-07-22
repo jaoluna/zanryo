@@ -106,7 +106,10 @@ async fn successful_refresh_is_fresh_and_persisted() {
 
     assert_eq!(snapshot.freshness, Freshness::Fresh);
     assert!(snapshot.spark.is_some());
-    assert_eq!(history.latest_limits().unwrap(), sample_limits());
+    assert_eq!(
+        history.latest_limits(ProviderId::OpenAi).unwrap(),
+        sample_limits()
+    );
 }
 
 #[tokio::test]
@@ -227,7 +230,7 @@ async fn fresh_dashboard_includes_and_persists_the_account_plan() {
 
     assert_eq!(dashboard.account.plan_type, PlanType::Plus);
     assert_eq!(
-        history.latest_account_context().unwrap(),
+        history.latest_account_context(ProviderId::OpenAi).unwrap(),
         Some(AccountContext::new(ProviderId::OpenAi, PlanType::Plus, now))
     );
 }

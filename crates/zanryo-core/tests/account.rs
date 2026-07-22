@@ -85,7 +85,12 @@ fn sqlite_unmapped_plan_is_deleted_before_returning_none() {
         .execute("UPDATE account_context SET plan_type = 'future_plan'", [])
         .unwrap();
 
-    assert_eq!(repository.latest_account_context().unwrap(), None);
+    assert_eq!(
+        repository
+            .latest_account_context(ProviderId::OpenAi)
+            .unwrap(),
+        None
+    );
 
     let cached_rows: i64 = Connection::open(&path)
         .unwrap()
@@ -115,7 +120,12 @@ fn upserting_unknown_context_suppresses_the_cached_row() {
         ))
         .unwrap();
 
-    assert_eq!(repository.latest_account_context().unwrap(), None);
+    assert_eq!(
+        repository
+            .latest_account_context(ProviderId::OpenAi)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -126,5 +136,34 @@ fn latest_account_context_round_trips_only_plan_and_observed_time() {
 
     repository.upsert_account_context(&saved).unwrap();
 
-    assert_eq!(repository.latest_account_context().unwrap(), Some(saved));
+    assert_eq!(
+        repository
+            .latest_account_context(ProviderId::OpenAi)
+            .unwrap(),
+        Some(saved)
+    );
+}
+
+#[test]
+fn account_context_upserts_are_scoped_to_their_provider() {
+    let repository =
+        HistoryRepository::open(tempdir().unwrap().path().join("history.sqlite3")).unwrap();
+    let openai = AccountContext::new(ProviderId::OpenAi, PlanType::Plus, at(9, 0));
+    let claude = AccountContext::new(ProviderId::Claude, PlanType::Pro, at(10, 0));
+
+    repository.upsert_account_context(&openai).unwrap();
+    repository.upsert_account_context(&claude).unwrap();
+
+    assert_eq!(
+        repository
+            .latest_account_context(ProviderId::OpenAi)
+            .unwrap(),
+        Some(openai)
+    );
+    assert_eq!(
+        repository
+            .latest_account_context(ProviderId::Claude)
+            .unwrap(),
+        Some(claude)
+    );
 }

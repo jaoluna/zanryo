@@ -60,7 +60,10 @@ where
                 let history = self.history.clone();
                 run_history_task(move || {
                     history.insert_limits(&limits)?;
-                    history.prune_before(Utc::now() - Duration::days(HISTORY_RETENTION_DAYS))?;
+                    history.prune_before(
+                        ProviderId::OpenAi,
+                        Utc::now() - Duration::days(HISTORY_RETENTION_DAYS),
+                    )?;
                     Ok(())
                 })
                 .await?;
@@ -78,7 +81,7 @@ where
 
     pub async fn cached(&self) -> Result<Option<QuotaSnapshot>> {
         let history = self.history.clone();
-        let limits = run_history_task(move || history.latest_limits()).await?;
+        let limits = run_history_task(move || history.latest_limits(ProviderId::OpenAi)).await?;
 
         if limits.is_empty() {
             Ok(None)
@@ -90,7 +93,8 @@ where
     pub async fn forecast(&self, now: DateTime<Utc>) -> Result<ForecastReport> {
         let history = self.history.clone();
         let since = now - Duration::days(8);
-        let samples = run_history_task(move || history.limits_since(since)).await?;
+        let samples =
+            run_history_task(move || history.limits_since(ProviderId::OpenAi, since)).await?;
         Ok(ForecastEngine::calculate(&samples, now))
     }
 
@@ -113,7 +117,7 @@ where
 
     async fn cached_account_context(&self) -> Option<AccountContext> {
         let history = self.history.clone();
-        run_history_task(move || history.latest_account_context())
+        run_history_task(move || history.latest_account_context(ProviderId::OpenAi))
             .await
             .ok()
             .flatten()

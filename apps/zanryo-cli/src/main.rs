@@ -10,7 +10,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use clap::{Parser, Subcommand};
 use serde_json::json;
 use zanryo_core::{
-    CodexAppServer, HistoryRepository, QuotaService, ZanryoError, resolve_codex_path,
+    CodexAppServer, HistoryRepository, ProviderId, QuotaService, ZanryoError, resolve_codex_path,
 };
 
 use crate::output::{format_forecast, format_history, format_snapshot};
@@ -108,7 +108,10 @@ async fn run_watch(json_output: bool) -> CliResult<()> {
 
 fn run_history(days: u16, json_output: bool) -> CliResult<()> {
     let history = HistoryRepository::open_default()?;
-    let limits = history.limits_since(Utc::now() - ChronoDuration::days(i64::from(days)))?;
+    let limits = history.limits_since(
+        ProviderId::OpenAi,
+        Utc::now() - ChronoDuration::days(i64::from(days)),
+    )?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&limits)?);
