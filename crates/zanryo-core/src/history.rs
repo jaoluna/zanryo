@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use directories::ProjectDirs;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::{AccountContext, LimitKind, PlanType, RateLimit, Result, ZanryoError};
+use crate::{AccountContext, LimitKind, PlanType, ProviderId, RateLimit, Result, ZanryoError};
 
 const SCHEMA: &str = "
 PRAGMA journal_mode = WAL;
@@ -170,7 +170,11 @@ impl HistoryRepository {
             return Ok(None);
         }
 
-        Ok(Some(AccountContext::new(plan_type, observed_at)))
+        Ok(Some(AccountContext::new(
+            ProviderId::OpenAi,
+            plan_type,
+            observed_at,
+        )))
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Connection>> {
@@ -211,6 +215,7 @@ fn query_limits(
         let (kind, limit_id, remaining_percent, resets_at, observed_at) =
             row.map_err(storage_error)?;
         RateLimit::new(
+            ProviderId::OpenAi,
             parse_kind(&kind)?,
             limit_id,
             remaining_percent,
@@ -223,8 +228,10 @@ fn query_limits(
 
 fn kind_name(kind: &LimitKind) -> &'static str {
     match kind {
+        LimitKind::FiveHour => "five_hour",
         LimitKind::Weekly => "weekly",
         LimitKind::Spark => "spark",
+        LimitKind::Fable => "fable",
         LimitKind::Other => "other",
     }
 }
@@ -246,8 +253,10 @@ fn plan_type_name(plan_type: PlanType) -> &'static str {
 
 fn parse_kind(value: &str) -> Result<LimitKind> {
     match value {
+        "five_hour" => Ok(LimitKind::FiveHour),
         "weekly" => Ok(LimitKind::Weekly),
         "spark" => Ok(LimitKind::Spark),
+        "fable" => Ok(LimitKind::Fable),
         "other" => Ok(LimitKind::Other),
         _ => Err(ZanryoError::Storage(
             "stored limit kind is invalid".to_owned(),

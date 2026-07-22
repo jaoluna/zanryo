@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use chrono::{Duration, TimeZone, Utc};
 use tempfile::tempdir;
 use zanryo_core::{
-    AccountContext, ForecastStatus, Freshness, HistoryRepository, LimitKind, PlanType,
+    AccountContext, ForecastStatus, Freshness, HistoryRepository, LimitKind, PlanType, ProviderId,
     QuotaService, RateLimit, RateLimitSource, Result, ZanryoError,
 };
 
@@ -75,8 +75,24 @@ fn sample_limits() -> Vec<RateLimit> {
     let observed = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
     let reset = observed + Duration::days(5);
     vec![
-        RateLimit::new(LimitKind::Weekly, "codex", 15.0, reset, observed).unwrap(),
-        RateLimit::new(LimitKind::Spark, "codex_bengalfox", 72.0, reset, observed).unwrap(),
+        RateLimit::new(
+            ProviderId::OpenAi,
+            LimitKind::Weekly,
+            "codex",
+            15.0,
+            reset,
+            observed,
+        )
+        .unwrap(),
+        RateLimit::new(
+            ProviderId::OpenAi,
+            LimitKind::Spark,
+            "codex_bengalfox",
+            72.0,
+            reset,
+            observed,
+        )
+        .unwrap(),
     ]
 }
 
@@ -141,6 +157,7 @@ async fn forecast_uses_persisted_weekly_history() {
     let reset = now + Duration::days(5);
     let samples = vec![
         RateLimit::new(
+            ProviderId::OpenAi,
             LimitKind::Weekly,
             "codex",
             80.0,
@@ -149,6 +166,7 @@ async fn forecast_uses_persisted_weekly_history() {
         )
         .unwrap(),
         RateLimit::new(
+            ProviderId::OpenAi,
             LimitKind::Weekly,
             "codex",
             78.0,
@@ -156,7 +174,15 @@ async fn forecast_uses_persisted_weekly_history() {
             now - Duration::hours(1),
         )
         .unwrap(),
-        RateLimit::new(LimitKind::Weekly, "codex", 76.0, reset, now).unwrap(),
+        RateLimit::new(
+            ProviderId::OpenAi,
+            LimitKind::Weekly,
+            "codex",
+            76.0,
+            reset,
+            now,
+        )
+        .unwrap(),
     ];
     history.insert_limits(&samples).unwrap();
     let service = QuotaService::new(FakeSource::succeeding(sample_limits()), history);
@@ -202,7 +228,7 @@ async fn fresh_dashboard_includes_and_persists_the_account_plan() {
     assert_eq!(dashboard.account.plan_type, PlanType::Plus);
     assert_eq!(
         history.latest_account_context().unwrap(),
-        Some(AccountContext::new(PlanType::Plus, now))
+        Some(AccountContext::new(ProviderId::OpenAi, PlanType::Plus, now))
     );
 }
 
@@ -213,6 +239,7 @@ async fn fresh_dashboard_reuses_a_plan_cached_less_than_24_hours_ago() {
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
     history
         .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
             PlanType::Plus,
             now - Duration::hours(23),
         ))
@@ -234,6 +261,7 @@ async fn failed_account_read_keeps_the_fresh_quota_and_cached_plan() {
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
     history
         .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
             PlanType::Plus,
             now - Duration::hours(24),
         ))
@@ -286,8 +314,14 @@ async fn concurrent_account_rpc_failure_without_cache_shares_one_unknown_outcome
         service.refresh_dashboard(now)
     );
 
-    assert_eq!(first.unwrap().account, AccountContext::unknown());
-    assert_eq!(second.unwrap().account, AccountContext::unknown());
+    assert_eq!(
+        first.unwrap().account,
+        AccountContext::unknown(ProviderId::OpenAi)
+    );
+    assert_eq!(
+        second.unwrap().account,
+        AccountContext::unknown(ProviderId::OpenAi)
+    );
     assert_eq!(account_reads.load(Ordering::SeqCst), 1);
 }
 
@@ -298,6 +332,7 @@ async fn concurrent_account_rpc_failure_shares_the_cached_plan_outcome() {
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
     history
         .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
             PlanType::Plus,
             now - Duration::hours(24),
         ))
@@ -331,8 +366,8 @@ async fn sequential_account_rpc_failures_retry_after_a_shared_outcome() {
     let first = service.refresh_dashboard(now).await.unwrap();
     let second = service.refresh_dashboard(now).await.unwrap();
 
-    assert_eq!(first.account, AccountContext::unknown());
-    assert_eq!(second.account, AccountContext::unknown());
+    assert_eq!(first.account, AccountContext::unknown(ProviderId::OpenAi));
+    assert_eq!(second.account, AccountContext::unknown(ProviderId::OpenAi));
     assert_eq!(account_reads.load(Ordering::SeqCst), 2);
 }
 
@@ -349,6 +384,9 @@ async fn stale_dashboard_does_not_read_the_account_plan() {
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
     assert_eq!(dashboard.quota.freshness, Freshness::Stale);
-    assert_eq!(dashboard.account, AccountContext::unknown());
+    assert_eq!(
+        dashboard.account,
+        AccountContext::unknown(ProviderId::OpenAi)
+    );
     assert_eq!(account_reads.load(Ordering::SeqCst), 0);
 }

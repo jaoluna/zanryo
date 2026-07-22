@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use serde_json::Value;
-use zanryo_core::{LimitKind, decode_rate_limits, is_rate_limits_update};
+use zanryo_core::{LimitKind, ProviderId, decode_rate_limits, is_rate_limits_update};
 
 #[test]
 fn decodes_weekly_and_spark_from_read_response() {
@@ -9,6 +9,11 @@ fn decodes_weekly_and_spark_from_read_response() {
     let limits = decode_rate_limits(value, observed).unwrap();
 
     assert_eq!(limits.len(), 2);
+    assert!(
+        limits
+            .iter()
+            .all(|item| item.provider == ProviderId::OpenAi)
+    );
     assert!(limits.iter().any(|item| item.kind == LimitKind::Weekly));
     assert!(limits.iter().any(|item| item.kind == LimitKind::Spark));
 }

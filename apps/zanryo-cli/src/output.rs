@@ -106,13 +106,14 @@ mod tests {
     use chrono::{Duration, TimeZone, Utc};
     use zanryo_core::{
         ChartSeries, ForecastConfidence, ForecastRange, ForecastReport, ForecastStatus, Freshness,
-        LimitKind, QuotaSnapshot, RateLimit,
+        LimitKind, ProviderId, QuotaSnapshot, RateLimit,
     };
 
     #[test]
     fn formats_weekly_and_spark_summary() {
         let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
         let weekly = RateLimit::new(
+            ProviderId::OpenAi,
             LimitKind::Weekly,
             "codex",
             15.0,
@@ -121,6 +122,7 @@ mod tests {
         )
         .unwrap();
         let spark = RateLimit::new(
+            ProviderId::OpenAi,
             LimitKind::Spark,
             "codex_bengalfox",
             72.0,
@@ -128,7 +130,9 @@ mod tests {
             now,
         )
         .unwrap();
-        let snapshot = QuotaSnapshot::from_limits(vec![weekly, spark], Freshness::Fresh).unwrap();
+        let snapshot =
+            QuotaSnapshot::from_limits(ProviderId::OpenAi, vec![weekly, spark], Freshness::Fresh)
+                .unwrap();
 
         assert_eq!(
             format_snapshot(&snapshot, now),

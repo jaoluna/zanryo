@@ -6,7 +6,7 @@ use zanryo_bridge::{
     BridgeHandle, zanryo_cached_json, zanryo_create, zanryo_destroy, zanryo_refresh_json,
     zanryo_string_free,
 };
-use zanryo_core::{AccountContext, HistoryRepository, LimitKind, PlanType, RateLimit};
+use zanryo_core::{AccountContext, HistoryRepository, LimitKind, PlanType, ProviderId, RateLimit};
 
 unsafe fn owned_json(pointer: *mut c_char) -> String {
     assert!(!pointer.is_null());
@@ -47,6 +47,7 @@ fn cached_json_serializes_persisted_dashboard() {
     let history = HistoryRepository::open(&path).unwrap();
     let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
     let weekly = RateLimit::new(
+        ProviderId::OpenAi,
         LimitKind::Weekly,
         "codex",
         76.0,
@@ -56,7 +57,11 @@ fn cached_json_serializes_persisted_dashboard() {
     .unwrap();
     history.insert_limits(&[weekly]).unwrap();
     history
-        .upsert_account_context(&AccountContext::new(PlanType::Plus, now))
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
+            PlanType::Plus,
+            now,
+        ))
         .unwrap();
     drop(history);
     let handle = Box::into_raw(Box::new(BridgeHandle::open(&path)));

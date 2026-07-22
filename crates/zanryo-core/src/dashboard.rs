@@ -2,8 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AccountContext, ForecastEngine, ForecastReport, Freshness, HistoryRepository, QuotaSnapshot,
-    Result,
+    AccountContext, ForecastEngine, ForecastReport, Freshness, HistoryRepository, ProviderId,
+    QuotaSnapshot, Result,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -22,12 +22,12 @@ pub fn cached_dashboard(
         return Ok(None);
     }
 
-    let quota = QuotaSnapshot::from_limits(latest, Freshness::Stale)?;
+    let quota = QuotaSnapshot::from_limits(ProviderId::OpenAi, latest, Freshness::Stale)?;
     let samples = history.limits_since(now - Duration::days(8))?;
     let forecast = ForecastEngine::calculate(&samples, now);
     let account = history
         .latest_account_context()?
-        .unwrap_or_else(AccountContext::unknown);
+        .unwrap_or_else(|| AccountContext::unknown(ProviderId::OpenAi));
 
     Ok(Some(DashboardSnapshot {
         quota,

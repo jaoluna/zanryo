@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{LimitKind, PlanType, RateLimit, Result, ZanryoError};
+use crate::{LimitKind, PlanType, ProviderId, RateLimit, Result, ZanryoError};
 
 const WEEKLY_WINDOW_MINUTES: i64 = 7 * 24 * 60;
 
@@ -124,6 +124,7 @@ fn decode_snapshot(
         .ok_or_else(|| ZanryoError::Protocol(format!("{limit_id}.resetsAt is invalid")))?;
 
     RateLimit::new(
+        ProviderId::OpenAi,
         kind,
         limit_id,
         100.0 - f64::from(used_percent),

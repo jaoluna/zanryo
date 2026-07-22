@@ -1,5 +1,7 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use zanryo_core::{ForecastConfidence, ForecastEngine, ForecastStatus, LimitKind, RateLimit};
+use zanryo_core::{
+    ForecastConfidence, ForecastEngine, ForecastStatus, LimitKind, ProviderId, RateLimit,
+};
 
 fn at(hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 7, 20, hour, minute, 0).unwrap()
@@ -11,6 +13,7 @@ fn weekly(
     resets_at: DateTime<Utc>,
 ) -> RateLimit {
     RateLimit::new(
+        ProviderId::OpenAi,
         LimitKind::Weekly,
         "codex",
         remaining_percent,
@@ -82,7 +85,15 @@ fn excludes_other_cycles_spark_and_upward_corrections() {
     let old_reset = reset - Duration::days(7);
     let samples = vec![
         weekly(at(7, 0), 95.0, old_reset),
-        RateLimit::new(LimitKind::Spark, "codex_bengalfox", 10.0, reset, at(8, 0)).unwrap(),
+        RateLimit::new(
+            ProviderId::OpenAi,
+            LimitKind::Spark,
+            "codex_bengalfox",
+            10.0,
+            reset,
+            at(8, 0),
+        )
+        .unwrap(),
         weekly(at(8, 0), 80.0, reset),
         weekly(at(8, 30), 85.0, reset),
         weekly(at(9, 0), 78.0, reset),

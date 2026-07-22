@@ -1,10 +1,11 @@
 use chrono::{Duration, TimeZone, Utc};
 use tempfile::tempdir;
-use zanryo_core::{HistoryRepository, LimitKind, RateLimit};
+use zanryo_core::{HistoryRepository, LimitKind, ProviderId, RateLimit};
 
 fn weekly_at(day: u32, remaining_percent: f64) -> RateLimit {
     let observed_at = Utc.with_ymd_and_hms(2026, 1, day, 12, 0, 0).unwrap();
     RateLimit::new(
+        ProviderId::OpenAi,
         LimitKind::Weekly,
         "codex",
         remaining_percent,

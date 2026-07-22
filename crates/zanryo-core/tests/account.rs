@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use rusqlite::Connection;
 use serde_json::json;
 use tempfile::tempdir;
-use zanryo_core::{AccountContext, HistoryRepository, PlanType, decode_account_plan};
+use zanryo_core::{AccountContext, HistoryRepository, PlanType, ProviderId, decode_account_plan};
 
 fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 7, 21, hour, minute, 0).unwrap()
@@ -44,7 +44,7 @@ fn missing_plan_type_becomes_unknown_without_failing_quota() {
 
 #[test]
 fn unknown_context_has_no_timestamp_or_identifier_fields() {
-    let context = AccountContext::unknown();
+    let context = AccountContext::unknown(ProviderId::OpenAi);
     let value = serde_json::to_value(context).unwrap();
 
     assert_eq!(value["plan_type"], "unknown");
@@ -55,7 +55,11 @@ fn unknown_context_has_no_timestamp_or_identifier_fields() {
 
 #[test]
 fn unknown_raw_plan_is_safe_and_has_no_identifier_fields() {
-    let context = AccountContext::new(PlanType::from_app_server("future_plan"), Utc::now());
+    let context = AccountContext::new(
+        ProviderId::OpenAi,
+        PlanType::from_app_server("future_plan"),
+        Utc::now(),
+    );
     let value = serde_json::to_value(context).unwrap();
 
     assert_eq!(value["plan_type"], "unknown");
@@ -70,7 +74,11 @@ fn sqlite_unmapped_plan_is_deleted_before_returning_none() {
     let path = directory.path().join("history.sqlite3");
     let repository = HistoryRepository::open(&path).unwrap();
     repository
-        .upsert_account_context(&AccountContext::new(PlanType::Plus, at(9, 0)))
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
+            PlanType::Plus,
+            at(9, 0),
+        ))
         .unwrap();
     Connection::open(&path)
         .unwrap()
@@ -92,11 +100,19 @@ fn upserting_unknown_context_suppresses_the_cached_row() {
     let directory = tempdir().unwrap();
     let repository = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
     repository
-        .upsert_account_context(&AccountContext::new(PlanType::Plus, at(9, 0)))
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
+            PlanType::Plus,
+            at(9, 0),
+        ))
         .unwrap();
 
     repository
-        .upsert_account_context(&AccountContext::new(PlanType::Unknown, at(10, 0)))
+        .upsert_account_context(&AccountContext::new(
+            ProviderId::OpenAi,
+            PlanType::Unknown,
+            at(10, 0),
+        ))
         .unwrap();
 
     assert_eq!(repository.latest_account_context().unwrap(), None);
@@ -106,7 +122,7 @@ fn upserting_unknown_context_suppresses_the_cached_row() {
 fn latest_account_context_round_trips_only_plan_and_observed_time() {
     let repository =
         HistoryRepository::open(tempdir().unwrap().path().join("history.sqlite3")).unwrap();
-    let saved = AccountContext::new(PlanType::Plus, at(9, 0));
+    let saved = AccountContext::new(ProviderId::OpenAi, PlanType::Plus, at(9, 0));
 
     repository.upsert_account_context(&saved).unwrap();
 
