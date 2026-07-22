@@ -69,6 +69,32 @@ final class ZanryoStoreTests: XCTestCase {
         let refreshCallCount = await provider.refreshCallCount()
         XCTAssertEqual(refreshCallCount, 1)
     }
+
+    func testOpenRefreshSkipsWhenSuccessfulRefreshIsRecent() async throws {
+        let provider = CountingDashboardProvider(snapshot: makeSnapshot(remaining: 39))
+        let store = ZanryoStore(provider: provider)
+
+        await store.refresh()
+
+        let recentUpdate = try XCTUnwrap(store.lastSuccessfulUpdate)
+        await store.refreshAfterOpening(now: recentUpdate.addingTimeInterval(10))
+
+        let refreshCallCount = await provider.refreshCallCount()
+        XCTAssertEqual(refreshCallCount, 1)
+    }
+
+    func testOpenRefreshRunsWhenSuccessfulRefreshIsOlderThanActiveInterval() async throws {
+        let provider = CountingDashboardProvider(snapshot: makeSnapshot(remaining: 39))
+        let store = ZanryoStore(provider: provider)
+
+        await store.refresh()
+
+        let staleUpdate = try XCTUnwrap(store.lastSuccessfulUpdate).addingTimeInterval(16)
+        await store.refreshAfterOpening(now: staleUpdate)
+
+        let refreshCallCount = await provider.refreshCallCount()
+        XCTAssertEqual(refreshCallCount, 2)
+    }
 }
 
 private actor TestDashboardProvider: DashboardProviding {
@@ -116,6 +142,28 @@ private actor TestDashboardProvider: DashboardProviding {
     func releaseRefresh() {
         refreshWaiters.forEach { $0.resume() }
         refreshWaiters.removeAll()
+    }
+
+    func refreshCallCount() -> Int {
+        refreshCalls
+    }
+}
+
+private actor CountingDashboardProvider: DashboardProviding {
+    private let snapshot: DashboardSnapshot
+    private var refreshCalls = 0
+
+    init(snapshot: DashboardSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func cached() async throws -> DashboardSnapshot? {
+        nil
+    }
+
+    func refresh() async throws -> DashboardSnapshot {
+        refreshCalls += 1
+        return snapshot
     }
 
     func refreshCallCount() -> Int {

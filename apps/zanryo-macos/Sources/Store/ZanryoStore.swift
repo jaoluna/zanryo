@@ -8,6 +8,8 @@ struct DisplayError: Error, Equatable, Sendable {
 
 @MainActor
 final class ZanryoStore: ObservableObject {
+    private static let activeOpenRefreshInterval: TimeInterval = 15
+
     @Published private(set) var snapshot: DashboardSnapshot?
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: DisplayError?
@@ -25,6 +27,17 @@ final class ZanryoStore: ObservableObject {
             snapshot = try await provider.cached()
         } catch {
             lastError = Self.displayError(from: error)
+        }
+
+        await refresh()
+    }
+
+    func refreshAfterOpening(now: Date = Date()) async {
+        if let lastSuccessfulUpdate {
+            let age = now.timeIntervalSince(lastSuccessfulUpdate)
+            if age >= 0 && age < Self.activeOpenRefreshInterval {
+                return
+            }
         }
 
         await refresh()
