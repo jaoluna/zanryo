@@ -118,7 +118,7 @@ struct PopoverView: View {
                     registry.select(provider)
                 } label: {
                     providerGlyph(for: provider)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 22, height: 22)
                         .background(
                             registry.selectedProvider == provider
                                 ? PopoverColor.forecastSurface
@@ -148,7 +148,7 @@ struct PopoverView: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(PopoverColor.foreground)
-                .padding(4)
+                .padding(2.5)
         } else {
             Text(provider == .openAI ? "O" : "A")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))

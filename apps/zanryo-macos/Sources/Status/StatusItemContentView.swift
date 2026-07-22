@@ -17,7 +17,7 @@ final class StatusItemContentView: NSView {
         static let headWidth: CGFloat = 34
         static let tipWidth: CGFloat = 13
         static let sourceTailWidth: CGFloat = 103
-        static let glyphSize: CGFloat = 14
+        static let glyphSize: CGFloat = 16
     }
 
     private let bodyImage = StatusItemContentView.tailImage(named: "zanryo-status-body")
