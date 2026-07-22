@@ -110,13 +110,162 @@ fn builds_bounded_chart_series_and_sustainable_reference() {
     assert_eq!(report.chart.forecast.first().unwrap().at, now);
     assert_eq!(report.chart.forecast.last().unwrap().at, reset);
     assert_eq!(report.chart.sustainable.len(), 2);
-    assert_eq!(report.chart.sustainable[0].remaining_percent, 50.0);
-    assert_eq!(report.chart.sustainable[1].remaining_percent, 0.0);
+    assert_eq!(report.chart.sustainable[0].at, reset - Duration::days(7));
+    assert_eq!(report.chart.sustainable[0].remaining_percent, 100.0);
+    assert_eq!(report.chart.sustainable.last().unwrap().at, reset);
+    assert_eq!(
+        report.chart.sustainable.last().unwrap().remaining_percent,
+        0.0
+    );
     assert!(report.chart.forecast.iter().all(|point| {
         (0.0..=100.0).contains(&point.remaining_percent)
             && point.uncertainty.low <= point.remaining_percent
             && point.uncertainty.high >= point.remaining_percent
     }));
+}
+
+#[test]
+fn chart_observed_series_keeps_transitions_without_repeating_plateaus() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(2);
+    let samples = vec![
+        weekly(now - Duration::hours(9), 90.0, reset),
+        weekly(now - Duration::hours(8), 90.0, reset),
+        weekly(now - Duration::hours(7), 90.0, reset),
+        weekly(now - Duration::hours(6), 82.0, reset),
+        weekly(now - Duration::hours(5), 82.0, reset),
+        weekly(now - Duration::hours(4), 82.0, reset),
+        weekly(now - Duration::hours(3), 70.0, reset),
+        weekly(now - Duration::hours(2), 70.0, reset),
+        weekly(now - Duration::hours(1), 70.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+    let observed: Vec<_> = report
+        .chart
+        .observed
+        .iter()
+        .map(|point| point.remaining_percent)
+        .collect();
+
+    assert_eq!(observed, vec![100.0, 90.0, 90.0, 82.0, 82.0, 70.0, 70.0]);
+    assert_eq!(
+        report.chart.sustainable.first().unwrap().remaining_percent,
+        100.0
+    );
+    assert_eq!(
+        report.chart.sustainable.last().unwrap().remaining_percent,
+        0.0
+    );
+}
+
+#[test]
+fn chart_observed_series_starts_at_cycle_start_when_first_sample_is_late() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(5);
+    let budget_start = reset - Duration::days(7);
+    let samples = vec![
+        weekly(budget_start + Duration::hours(3), 94.0, reset),
+        weekly(budget_start + Duration::hours(4), 92.0, reset),
+        weekly(budget_start + Duration::hours(5), 90.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.chart.observed.first().unwrap().at, budget_start);
+    assert_eq!(
+        report.chart.observed.first().unwrap().remaining_percent,
+        100.0
+    );
+}
+
+#[test]
+fn chart_observed_series_clips_reset_jitter_before_cycle_start() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(5);
+    let budget_start = reset - Duration::days(7);
+    let samples = vec![
+        weekly(budget_start - Duration::minutes(4), 100.0, reset),
+        weekly(budget_start + Duration::minutes(10), 96.0, reset),
+        weekly(budget_start + Duration::minutes(20), 96.0, reset),
+        weekly(budget_start + Duration::minutes(30), 92.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.chart.observed.first().unwrap().at, budget_start);
+    assert_eq!(
+        report.chart.observed.first().unwrap().remaining_percent,
+        100.0
+    );
+    assert!(
+        report
+            .chart
+            .observed
+            .iter()
+            .all(|point| point.at >= budget_start)
+    );
+    assert_eq!(
+        report
+            .chart
+            .observed
+            .iter()
+            .map(|point| point.remaining_percent)
+            .collect::<Vec<_>>(),
+        vec![100.0, 96.0, 96.0, 92.0]
+    );
+}
+
+#[test]
+fn projects_from_now_when_latest_sample_is_stale() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(1);
+    let samples = vec![
+        weekly(now - Duration::hours(30), 65.0, reset),
+        weekly(now - Duration::hours(18), 55.0, reset),
+        weekly(now - Duration::hours(6), 45.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+
+    assert_eq!(report.status, ForecastStatus::Estimated);
+    assert!((report.consumed_per_day.unwrap() - 20.0).abs() < 0.01);
+    assert!((report.sustainable_per_day.unwrap() - 40.0).abs() < 0.01);
+    assert_eq!(report.estimated_depletion_at, Some(now + Duration::days(2)));
+    assert!((report.chart.forecast.first().unwrap().remaining_percent - 40.0).abs() < 0.01);
+    assert!((report.chart.sustainable.first().unwrap().remaining_percent - 100.0).abs() < 0.01);
+    assert_eq!(report.chart.sustainable.last().unwrap().at, reset);
+    assert!((report.chart.sustainable.last().unwrap().remaining_percent - 0.0).abs() < 0.01);
+}
+
+#[test]
+fn forecast_chart_stops_at_depletion_instead_of_drawing_zero_until_reset() {
+    let now = at(9, 0);
+    let reset = now + Duration::days(5);
+    let samples = vec![
+        weekly(now - Duration::days(2), 100.0, reset),
+        weekly(now - Duration::days(1), 60.0, reset),
+        weekly(now, 20.0, reset),
+    ];
+
+    let report = ForecastEngine::calculate(&samples, now);
+    let last_forecast = report.chart.forecast.last().unwrap();
+
+    assert!(last_forecast.at < reset);
+    assert!((last_forecast.remaining_percent - 0.0).abs() < 0.01);
+    assert_eq!(
+        report.chart.sustainable.first().unwrap().at,
+        reset - Duration::days(7)
+    );
+    assert_eq!(
+        report.chart.sustainable.first().unwrap().remaining_percent,
+        100.0
+    );
+    assert_eq!(report.chart.sustainable.last().unwrap().at, reset);
+    assert_eq!(
+        report.chart.sustainable.last().unwrap().remaining_percent,
+        0.0
+    );
 }
 
 #[test]

@@ -11,6 +11,7 @@ const MAX_RECENT_GAP_HOURS: i64 = 6;
 const DISCONTINUITY_POINTS: f64 = 1.0;
 const MINIMUM_RATE: f64 = 0.05;
 const SECONDS_PER_DAY: f64 = 86_400.0;
+const WEEKLY_CYCLE_DAYS: i64 = 7;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -95,6 +96,14 @@ impl ForecastEngine {
         let consumed_per_day = recent_rate
             .map(|rate| cycle_rate * (1.0 - recent_weight) + rate * recent_weight)
             .unwrap_or(cycle_rate);
+        let elapsed_since_latest_days = now
+            .signed_duration_since(latest.observed_at)
+            .num_seconds()
+            .max(0) as f64
+            / SECONDS_PER_DAY;
+        let current_remaining_percent = (latest.remaining_percent
+            - consumed_per_day * elapsed_since_latest_days)
+            .clamp(0.0, 100.0);
         let days_remaining = latest
             .resets_at
             .signed_duration_since(now)
@@ -102,7 +111,7 @@ impl ForecastEngine {
             .max(0) as f64
             / SECONDS_PER_DAY;
         let sustainable_per_day = if days_remaining > 0.0 {
-            latest.remaining_percent / days_remaining
+            current_remaining_percent / days_remaining
         } else {
             0.0
         };
@@ -147,6 +156,7 @@ impl ForecastEngine {
             &cleaned,
             now,
             latest.resets_at,
+            current_remaining_percent,
             consumed_per_day,
             &rate_range,
         );
@@ -283,21 +293,85 @@ fn observed_points(samples: &[&RateLimit]) -> Vec<ChartPoint> {
         .collect()
 }
 
+fn chart_observed_points(samples: &[&RateLimit], budget_start: DateTime<Utc>) -> Vec<ChartPoint> {
+    let visible_samples: Vec<_> = samples
+        .iter()
+        .copied()
+        .filter(|sample| sample.observed_at >= budget_start)
+        .collect();
+
+    let mut points = vec![ChartPoint {
+        at: budget_start,
+        remaining_percent: 100.0,
+    }];
+
+    let Some(first) = visible_samples.first() else {
+        return points;
+    };
+
+    push_observed_point(&mut points, first);
+
+    for window in visible_samples.windows(2) {
+        let previous = window[0];
+        let current = window[1];
+        if (current.remaining_percent - previous.remaining_percent).abs() < f64::EPSILON {
+            continue;
+        }
+
+        if points
+            .last()
+            .is_none_or(|point| point.at != previous.observed_at)
+        {
+            push_observed_point(&mut points, previous);
+        }
+
+        push_observed_point(&mut points, current);
+    }
+
+    let latest = visible_samples.last().expect("first checked");
+    if points
+        .last()
+        .is_none_or(|point| point.at != latest.observed_at)
+    {
+        push_observed_point(&mut points, latest);
+    }
+
+    points
+}
+
+fn push_observed_point(points: &mut Vec<ChartPoint>, sample: &RateLimit) {
+    if let Some(last) = points.last_mut() {
+        if last.at == sample.observed_at {
+            last.remaining_percent = sample.remaining_percent;
+            return;
+        }
+    }
+
+    points.push(ChartPoint {
+        at: sample.observed_at,
+        remaining_percent: sample.remaining_percent,
+    });
+}
+
 fn build_chart(
     samples: &[&RateLimit],
     now: DateTime<Utc>,
     reset: DateTime<Utc>,
+    current_remaining_percent: f64,
     rate: f64,
     rate_range: &ForecastRange,
 ) -> ChartSeries {
-    let latest = samples.last().expect("estimated history is non-empty");
-    let forecast = projection_times(now, reset)
+    let budget_start = reset - chrono::Duration::days(WEEKLY_CYCLE_DAYS);
+    let forecast_end = forecast_end(now, reset, current_remaining_percent, rate);
+    let observed = chart_observed_points(samples, budget_start);
+    let forecast = projection_times(now, forecast_end)
         .into_iter()
         .map(|at| {
             let days = at.signed_duration_since(now).num_seconds().max(0) as f64 / SECONDS_PER_DAY;
-            let remaining = (latest.remaining_percent - rate * days).clamp(0.0, 100.0);
-            let optimistic = (latest.remaining_percent - rate_range.low * days).clamp(0.0, 100.0);
-            let pessimistic = (latest.remaining_percent - rate_range.high * days).clamp(0.0, 100.0);
+            let remaining = (current_remaining_percent - rate * days).clamp(0.0, 100.0);
+            let optimistic = (current_remaining_percent - rate_range.low * days).clamp(0.0, 100.0);
+            let pessimistic =
+                (current_remaining_percent - rate_range.high * days).clamp(0.0, 100.0);
             ForecastPoint {
                 at,
                 remaining_percent: remaining,
@@ -310,8 +384,8 @@ fn build_chart(
         .collect();
     let sustainable = vec![
         ChartPoint {
-            at: now,
-            remaining_percent: latest.remaining_percent,
+            at: budget_start,
+            remaining_percent: 100.0,
         },
         ChartPoint {
             at: reset,
@@ -320,10 +394,25 @@ fn build_chart(
     ];
 
     ChartSeries {
-        observed: observed_points(samples),
+        observed,
         forecast,
         sustainable,
     }
+}
+
+fn forecast_end(
+    now: DateTime<Utc>,
+    reset: DateTime<Utc>,
+    current_remaining_percent: f64,
+    rate: f64,
+) -> DateTime<Utc> {
+    if rate < MINIMUM_RATE || current_remaining_percent <= 0.0 {
+        return reset;
+    }
+
+    let seconds_to_zero = (current_remaining_percent / rate * SECONDS_PER_DAY).round() as i64;
+    let depletion = now + chrono::Duration::seconds(seconds_to_zero);
+    depletion.min(reset)
 }
 
 fn projection_times(now: DateTime<Utc>, reset: DateTime<Utc>) -> Vec<DateTime<Utc>> {
