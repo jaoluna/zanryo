@@ -4,19 +4,28 @@ import XCTest
 
 @MainActor
 final class StatusItemControllerTests: XCTestCase {
-    func testUpdateAppliesTitleAndAccessibilityToStatusButton() throws {
+    func testUpdateEmbedsAccessibleDragonPresentationWithoutButtonTitle() throws {
         let controller = StatusItemController(onAction: { _, _, _ in })
         defer { controller.invalidate() }
-        let title = StatusTitle(
-            attributed: NSAttributedString(string: "Zanryo 15% · 5d 3h"),
-            accessibilityLabel: "Weekly Codex quota has 15 percent remaining."
+        let presentation = StatusPresentation(
+            modules: [
+                ProviderModule(
+                    provider: .openAI,
+                    remainingPercent: 15,
+                    reset: "5d 3h",
+                    resetSpoken: "5 days and 3 hours",
+                    isStale: false
+                )
+            ]
         )
 
-        controller.update(title)
+        controller.update(presentation)
 
         let button = try XCTUnwrap(controller.button)
-        XCTAssertEqual(button.attributedTitle.string, "Zanryo 15% · 5d 3h")
-        XCTAssertEqual(button.accessibilityLabel(), title.accessibilityLabel)
+        XCTAssertEqual(button.attributedTitle.string, "")
+        XCTAssertEqual(button.accessibilityLabel(), presentation.accessibilityLabel)
+        XCTAssertEqual(controller.presentation, presentation)
+        XCTAssertGreaterThan(controller.contentSize.width, 18)
     }
 
     func testPrimaryClickInvokesPopoverToggleWithStatusButton() throws {

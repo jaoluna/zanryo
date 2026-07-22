@@ -5,7 +5,14 @@ final class StatusItemController: NSObject {
     private let statusBar: NSStatusBar
     private let statusItem: NSStatusItem
     private let onAction: (StatusItemAction, NSStatusBarButton, NSEvent?) -> Void
+    private let contentView = StatusItemContentView(frame: .zero)
     private var isInvalidated = false
+
+    private(set) var presentation = StatusPresentation(modules: [])
+
+    var contentSize: NSSize {
+        contentView.intrinsicContentSize
+    }
 
     var button: NSStatusBarButton? {
         statusItem.button
@@ -24,8 +31,15 @@ final class StatusItemController: NSObject {
         button?.action = #selector(performAction)
         button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button?.toolTip = "Zanryo Codex quota"
+        button?.title = ""
+        button?.attributedTitle = NSAttributedString(string: "")
+        if let button {
+            contentView.frame = button.bounds
+            contentView.autoresizingMask = [.width, .height]
+            button.addSubview(contentView)
+        }
         statusItem.menu = nil
-        update(StatusTitle.make(snapshot: nil))
+        update(StatusPresentation(modules: []))
     }
 
     func invalidate() {
@@ -36,9 +50,11 @@ final class StatusItemController: NSObject {
         statusBar.removeStatusItem(statusItem)
     }
 
-    func update(_ title: StatusTitle) {
-        button?.attributedTitle = title.attributed
-        button?.setAccessibilityLabel(title.accessibilityLabel)
+    func update(_ presentation: StatusPresentation) {
+        self.presentation = presentation
+        contentView.update(presentation)
+        statusItem.length = contentView.intrinsicContentSize.width
+        button?.setAccessibilityLabel(presentation.accessibilityLabel)
     }
 
     func setHighlighted(_ isHighlighted: Bool) {

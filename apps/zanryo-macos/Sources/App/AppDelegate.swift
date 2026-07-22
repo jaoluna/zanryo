@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await store.start() }
         } catch {
             let statusItemController = StatusItemController(onAction: { _, _, _ in })
-            statusItemController.update(StatusTitle.make(snapshot: nil))
+            statusItemController.update(StatusPresentation.make(snapshot: nil))
             self.statusItemController = statusItemController
         }
     }
@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func observeSnapshot(in store: ZanryoStore) {
         store.$snapshot
             .sink { [weak statusItemController] snapshot in
-                statusItemController?.update(StatusTitle.make(snapshot: snapshot))
+                statusItemController?.update(StatusPresentation.make(snapshot: snapshot))
             }
             .store(in: &cancellables)
     }
