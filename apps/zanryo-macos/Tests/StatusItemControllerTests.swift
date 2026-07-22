@@ -82,6 +82,7 @@ final class StatusItemControllerTests: XCTestCase {
 
         XCTAssertEqual(oneModuleLayout.headWidth, twoModuleLayout.headWidth)
         XCTAssertEqual(oneModuleLayout.tipWidth, twoModuleLayout.tipWidth)
+        XCTAssertGreaterThanOrEqual(oneModuleLayout.headWidth, 34)
         XCTAssertGreaterThan(twoModuleLayout.middleWidth, oneModuleLayout.middleWidth)
         XCTAssertGreaterThan(view.intrinsicContentSize.width, oneModuleWidth)
     }

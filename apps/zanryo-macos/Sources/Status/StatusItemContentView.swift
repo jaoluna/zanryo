@@ -13,10 +13,11 @@ final class StatusItemContentView: NSView {
     }
 
     private enum Metrics {
-        static let height: CGFloat = 18
-        static let headWidth: CGFloat = 30
-        static let tipWidth: CGFloat = 12
-        static let sourceTailWidth: CGFloat = 93
+        static let height: CGFloat = 20
+        static let headWidth: CGFloat = 34
+        static let tipWidth: CGFloat = 13
+        static let sourceTailWidth: CGFloat = 103
+        static let glyphSize: CGFloat = 14
     }
 
     private let bodyImage = StatusItemContentView.tailImage(named: "zanryo-status-body")
@@ -111,12 +112,16 @@ final class StatusItemContentView: NSView {
         glyph.image = Self.glyphImage(named: module.provider.statusGlyph)
         glyph.contentTintColor = .labelColor
         glyph.imageScaling = .scaleProportionallyDown
-        glyph.frame.size = NSSize(width: 11, height: 11)
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            glyph.widthAnchor.constraint(equalToConstant: Metrics.glyphSize),
+            glyph.heightAnchor.constraint(equalToConstant: Metrics.glyphSize),
+        ])
         glyph.setAccessibilityElement(false)
         stack.addArrangedSubview(glyph)
 
         let label = NSTextField(labelWithString: module.text)
-        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        label.font = .monospacedDigitSystemFont(ofSize: 12.25, weight: .semibold)
         label.textColor = module.provider == .openAI
             ? NSColor(srgbRed: 0xF2 / 255, green: 0xB6 / 255, blue: 0x32 / 255, alpha: 1)
             : .labelColor
@@ -212,7 +217,7 @@ final class StatusItemContentView: NSView {
             return nil
         }
         image.isTemplate = true
-        image.size = NSSize(width: 11, height: 11)
+        image.size = NSSize(width: Metrics.glyphSize, height: Metrics.glyphSize)
         return image
     }
 }
