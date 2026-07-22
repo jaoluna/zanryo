@@ -43,6 +43,13 @@ actor RustBridge: DashboardProviding {
         }.value
     }
 
+    func discoverProviders() async throws -> [ProviderInstallation] {
+        try await Task.detached(priority: .utility) {
+            let data = try Self.copyJSON(from: zanryo_provider_discovery_json())
+            return try BridgeDecoder.decodeInstallations(from: data)
+        }.value
+    }
+
     private nonisolated static func copyJSON(
         from pointer: UnsafeMutablePointer<CChar>?
     ) throws -> Data {

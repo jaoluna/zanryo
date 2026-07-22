@@ -2,6 +2,37 @@ import XCTest
 @testable import Zanryo
 
 final class BridgeEnvelopeTests: XCTestCase {
+    func testDecodesProviderDiscoveryInStableOrder() throws {
+        let data = Data(
+            #"{"schema_version":1,"ok":true,"data":[{"provider":"openai","executable_path":"/usr/local/bin/codex"},{"provider":"claude","executable_path":"/Users/test/.local/bin/claude"}],"error":null}"#.utf8
+        )
+
+        let providers = try BridgeDecoder.decodeInstallations(from: data)
+
+        XCTAssertEqual(providers.map(\.provider), [.openAI, .claude])
+    }
+
+    func testDecodesEmptyProviderDiscovery() throws {
+        let data = Data(#"{"schema_version":1,"ok":true,"data":null,"error":null}"#.utf8)
+
+        let providers = try BridgeDecoder.decodeInstallations(from: data)
+
+        XCTAssertEqual(providers, [])
+    }
+
+    func testProviderDiscoverySurfacesRemoteError() {
+        let data = Data(
+            #"{"schema_version":1,"ok":false,"data":null,"error":{"code":"discovery_failed","message":"Provider discovery failed"}}"#.utf8
+        )
+
+        XCTAssertThrowsError(try BridgeDecoder.decodeInstallations(from: data)) { error in
+            XCTAssertEqual(
+                error as? BridgeDecodeError,
+                .remote(code: "discovery_failed", message: "Provider discovery failed")
+            )
+        }
+    }
+
     func testDecodesVersionOneDashboardAndIgnoresUnknownFields() throws {
         let data = Data(
             """

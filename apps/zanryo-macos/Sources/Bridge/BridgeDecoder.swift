@@ -45,13 +45,24 @@ enum BridgeDecoder {
     private static let supportedSchema = 1
 
     static func decodeOptionalSnapshot(from data: Data) throws -> DashboardSnapshot? {
+        try decodeEnvelope(DashboardSnapshot.self, from: data)
+    }
+
+    static func decodeInstallations(from data: Data) throws -> [ProviderInstallation] {
+        try decodeEnvelope([ProviderInstallation].self, from: data) ?? []
+    }
+
+    private static func decodeEnvelope<Payload: Decodable>(
+        _ payload: Payload.Type,
+        from data: Data
+    ) throws -> Payload? {
         let decoder = makeDecoder()
         let probe = try decoder.decode(SchemaProbe.self, from: data)
         guard probe.schemaVersion == supportedSchema else {
             throw BridgeDecodeError.unsupportedSchema(probe.schemaVersion)
         }
 
-        let envelope = try decoder.decode(BridgeEnvelope<DashboardSnapshot>.self, from: data)
+        let envelope = try decoder.decode(BridgeEnvelope<Payload>.self, from: data)
         guard envelope.ok else {
             let error = envelope.error
             throw BridgeDecodeError.remote(
