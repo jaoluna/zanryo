@@ -51,16 +51,13 @@ final class ProviderAppearanceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let now = Date()
-        let snapshot = ClaudeUsageSnapshot(provider: .claude,
-            fiveHour: RateLimit(kind: .fiveHour, limitId: "claude_five_hour", remainingPercent: 100,
-                               resetsAt: now.addingTimeInterval(10800), observedAt: now),
-            weekly: RateLimit(kind: .weekly, limitId: "claude_weekly", remainingPercent: 97,
-                             resetsAt: now.addingTimeInterval(432000), observedAt: now), freshness: .fresh)
-        for hasData in [true, false] {
+        for state in ["estimated", "collecting", "stale", "unavailable"] {
+            let snapshot = state == "unavailable" ? nil : ClaudeDashboardFixture.snapshot(
+                now: now, collecting: state == "collecting", stale: state == "stale")
             let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
             await registry.discover()
             registry.select(.claude)
-            registry.updateClaude(snapshot: hasData ? snapshot : nil, error: nil, isRefreshing: false)
+            registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
             let store = ZanryoStore(provider: StyleDashboard())
             let host = NSHostingView(rootView: PopoverView(store: store, registry: registry))
             host.frame = NSRect(x: 0, y: 0, width: 390, height: 590)
@@ -80,7 +77,7 @@ final class ProviderAppearanceTests: XCTestCase {
             // Freeze encoded pixels now; don't let a deferred NSImage draw outlive its host.
             let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
             let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-            attachment.name = hasData ? "claude-style-fresh" : "claude-style-unavailable"
+            attachment.name = "claude-dashboard-\(state)"
             attachment.lifetime = .keepAlways
             add(attachment)
             XCTAssertEqual(host.bounds.height, 590)

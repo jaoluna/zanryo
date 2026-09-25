@@ -2,6 +2,23 @@ import XCTest
 @testable import Zanryo
 
 final class ClaudeUsageDecoderTests: XCTestCase {
+    func testAdditiveWeeklyForecastDecodesAndLegacyPayloadStaysValid() throws {
+        let legacy = payload(five: 66, weekly: 97)
+        XCTAssertNil(try BridgeDecoder.decodeClaudeUsage(from: legacy)?.weeklyForecast)
+        var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: legacy) as? [String: Any])
+        var data = try XCTUnwrap(envelope["data"] as? [String: Any])
+        data["weekly_forecast"] = [
+            "status": "collecting_history", "confidence": "collecting",
+            "chart": ["observed": [["at": "2026-09-25T20:40:00Z", "remaining_percent": 97]],
+                      "forecast": [], "sustainable": []],
+        ]
+        envelope["data"] = data
+        let decoded = try XCTUnwrap(BridgeDecoder.decodeClaudeUsage(from: JSONSerialization.data(withJSONObject: envelope)))
+        XCTAssertEqual(decoded.weeklyForecast?.status, .collectingHistory)
+        XCTAssertEqual(decoded.weeklyForecast?.chart.observed.first?.remainingPercent, 97)
+        XCTAssertEqual(decoded.fiveHour?.remainingPercent, 66)
+    }
+
     func testOptionalWindowsAndRemainingScale() throws {
         let five = try XCTUnwrap(BridgeDecoder.decodeClaudeUsage(from: payload(five: 66, weekly: nil)))
         XCTAssertEqual(five.fiveHour?.remainingPercent, 66)
