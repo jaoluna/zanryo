@@ -62,7 +62,11 @@ Open the popover for the complete view:
 - authenticated Codex plan when the official app-server exposes it;
 - manual refresh and provider visibility controls.
 
-OpenAI is the first provider. Zanryo already detects an installed Claude Code CLI and includes the provider-aware interface, but Claude quota collection is not available in this preview. Missing data is shown as unavailable, never invented or displayed as zero.
+OpenAI is the first provider. Claude subscription quotas can be read through the installed Claude Code CLI's native `/usage` command, in safe mode without a model request. Each provider and reset window stays separate. Missing data is shown as unavailable, never invented or displayed as zero.
+
+Claude collection currently supports the observed CLI **2.1.282** screen format. Sign in and approve folder trust in Claude Code yourself, then select that folder with **Trusted folder…** in Zanryo. Zanryo never approves login, trust, or permission prompts. It waits for the usage refresh to complete rather than accepting the CLI's initial cached frame. Background refresh is limited to once per five minutes, with **Refresh now** available; failures retain the last saved reading and mark it stale. Reset times have the minute precision displayed by the CLI. No OAuth tokens, browser cookies, private endpoints, or account identifiers are collected.
+
+Freshness is inferred from the supported CLI's refresh transition and completed display, not a server timestamp or an independent API receipt. An unrecognized CLI error or future screen change can require a collector update. Claude collection currently requires Unix terminal support; it fails closed on other platforms.
 
 ## Reading the forecast
 
@@ -176,7 +180,7 @@ xcodegen generate --spec apps/zanryo-macos/project.yml
 - [x] Native macOS menu-bar application
 - [x] Dragon identity and provider-aware status layout
 - [x] OpenAI Codex quota collection
-- [ ] Claude quota collector
+- [x] Guarded Claude CLI quota collector (supported native screen format; no public release yet)
 - [ ] Signed and notarized macOS release
 - [ ] Official Homebrew Formula and Cask
 - [ ] Linux desktop shell
