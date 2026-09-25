@@ -88,6 +88,19 @@ final class AppResourceTests: XCTestCase {
         )
     }
 
+    func testClaudeGlyphUsesRadialMarkWithSolidCenterNotAnthropicLettermark() throws {
+        let glyph = try image(named: "claude-provider-glyph", in: applicationBundle())
+        XCTAssertEqual(glyph.width, 128)
+        XCTAssertEqual(glyph.height, 128)
+        let bytes = try XCTUnwrap(normalizedRGBABytes(for: glyph))
+        // The approved radial mark has a solid hub. The old A has a hollow center.
+        for y in 57...67 {
+            for x in 57...67 {
+                XCTAssertGreaterThan(bytes[(y * glyph.width + x) * 4 + 3], 240)
+            }
+        }
+    }
+
     private func applicationBundle() throws -> Bundle {
         let testBundle = Bundle(for: Self.self)
         let appBundleURL = testBundle.bundleURL
