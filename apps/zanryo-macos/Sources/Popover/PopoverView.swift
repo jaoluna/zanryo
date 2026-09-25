@@ -40,6 +40,7 @@ struct PopoverView: View {
 
             if let selectedProvider = registry.selectedProvider {
                 Toggle("Show in menu bar", isOn: menuBarBinding(for: selectedProvider))
+                    .tint(selectedProvider == .claude ? PopoverColor.claudeAccent : Color.accentColor)
                     .font(.system(size: 9.4, weight: .medium))
                     .fixedSize()
                     .accessibilityLabel("Show \(selectedProvider.displayName) in the menu bar")
@@ -154,12 +155,12 @@ struct PopoverView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundStyle(PopoverColor.foreground)
+                .foregroundStyle(provider == .claude ? PopoverColor.claudeAccent : PopoverColor.foreground)
                 .padding(2.5)
         } else {
-            Text(provider == .openAI ? "O" : "A")
+            Text(provider == .openAI ? "O" : "C")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.foreground)
+                .foregroundStyle(provider == .claude ? PopoverColor.claudeAccent : PopoverColor.foreground)
         }
     }
 
@@ -438,6 +439,7 @@ struct PopoverView: View {
 }
 
 enum PopoverColor {
+    static let claudeAccent = Color(nsColor: ProviderAppearance.claudeAccent)
     static let background = Color(red: 12 / 255, green: 14 / 255, blue: 16 / 255)
     static let forecastSurface = Color(red: 22 / 255, green: 25 / 255, blue: 29 / 255)
     static let foreground = Color(red: 248 / 255, green: 243 / 255, blue: 232 / 255)
@@ -451,7 +453,7 @@ enum PopoverColor {
     static let chartGrid = Color.white.opacity(0.10)
     static let chartSurface = Color.black.opacity(0.14)
     static let chartForecastFill = Color(red: 255 / 255, green: 91 / 255, blue: 91 / 255).opacity(0.13)
-    static let accent = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
+    static let accent = Color(nsColor: ProviderAppearance.codexAccent)
     static let divider = Color.white.opacity(0.12)
     static let warning = Color(red: 255 / 255, green: 163 / 255, blue: 163 / 255)
 }
