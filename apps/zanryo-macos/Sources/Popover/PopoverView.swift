@@ -18,6 +18,8 @@ struct PopoverView: View {
             divider
             if registry.selectedProvider == .openAI {
                 openAIDashboard
+            } else if registry.selectedProvider == .claude {
+                ClaudeUsageView(registry: registry)
             } else {
                 unavailableProviderSurface
             }
@@ -50,7 +52,7 @@ struct PopoverView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
 
-            if store.isRefreshing {
+            if registry.selectedProvider == .claude ? registry.claudeIsRefreshing : store.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
                     .tint(PopoverColor.secondaryForeground)
@@ -62,6 +64,10 @@ struct PopoverView: View {
     }
 
     private var headerStatusText: String {
+        if registry.selectedProvider == .claude {
+            if registry.claudeIsRefreshing { return "Refreshing" }
+            if let snapshot = registry.claudeSnapshot { return registry.claudeError != nil || snapshot.isStale() ? "Saved" : "Updated" }
+        }
         guard registry.selectedProvider == .openAI else {
             return registry.selectedProvider == nil ? "No provider" : "Unavailable"
         }
@@ -73,7 +79,7 @@ struct PopoverView: View {
             return "No supported provider is installed."
         }
         guard selectedProvider == .openAI else {
-            return "(selectedProvider.displayName) quota data is unavailable."
+            return "\(selectedProvider.displayName). \(headerStatusText)."
         }
         return model.headerAccessibilityText
     }
@@ -116,6 +122,7 @@ struct PopoverView: View {
             ForEach(registry.installedProviders, id: \.self) { provider in
                 Button {
                     registry.select(provider)
+                    if provider == .claude { Task { await registry.refreshClaude() } }
                 } label: {
                     providerGlyph(for: provider)
                         .frame(width: 22, height: 22)

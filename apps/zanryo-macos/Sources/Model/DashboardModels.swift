@@ -1,6 +1,7 @@
 import Foundation
 
 enum LimitKind: String, Decodable, Sendable {
+    case fiveHour = "five_hour"
     case weekly
     case spark
     case other

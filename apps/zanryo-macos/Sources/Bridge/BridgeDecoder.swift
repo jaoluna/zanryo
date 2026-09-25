@@ -48,6 +48,17 @@ enum BridgeDecoder {
         try decodeEnvelope(DashboardSnapshot.self, from: data)
     }
 
+    static func decodeClaudeUsage(from data: Data) throws -> ClaudeUsageSnapshot? {
+        guard let result = try decodeEnvelope(ClaudeUsageSnapshot.self, from: data) else { return nil }
+        guard result.provider == .claude, !result.windows.isEmpty,
+              result.fiveHour == nil || result.fiveHour?.kind == .fiveHour,
+              result.weekly == nil || result.weekly?.kind == .weekly,
+              result.windows.allSatisfy({ $0.remainingPercent.isFinite && (0...100).contains($0.remainingPercent) }) else {
+            throw BridgeDecodeError.remote(code: "invalid_claude_payload", message: "Invalid Claude quota response")
+        }
+        return result
+    }
+
     static func decodeInstallations(from data: Data) throws -> [ProviderInstallation] {
         try decodeEnvelope([ProviderInstallation].self, from: data) ?? []
     }

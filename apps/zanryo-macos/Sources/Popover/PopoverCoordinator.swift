@@ -53,6 +53,10 @@ final class PopoverCoordinator: NSObject, NSPopoverDelegate {
         startOutsideClickMonitor()
         onVisibilityChanged?(true)
         Task {
+            if registry.selectedProvider == .claude {
+                await registry.refreshClaude()
+                return
+            }
             guard registry.shouldRefreshOpenAI else {
                 return
             }

@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: ZanryoStore?
+    private var claudeStore: ClaudeUsageStore?
     private var registry: ProviderRegistry?
     private var statusItemController: StatusItemController?
     private var popoverCoordinator: PopoverCoordinator?
@@ -26,14 +27,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let bridge = try RustBridge()
             let store = ZanryoStore(provider: bridge)
             let registry = ProviderRegistry(discoverer: bridge)
+            let claudeStore = ClaudeUsageStore(source: bridge)
+            registry.onClaudeRefresh = { [weak claudeStore] force in await claudeStore?.refresh(force: force) }
             let popoverCoordinator = PopoverCoordinator(store: store, registry: registry)
             let contextMenu = StatusItemContextMenu(
                 onRefresh: {
                     Task {
-                        guard registry.shouldRefreshOpenAI else {
-                            return
+                        if registry.selectedProvider == .claude {
+                            await registry.refreshClaude(force: true)
+                        } else if registry.shouldRefreshOpenAI {
+                            await store.refresh()
                         }
-                        await store.refresh()
                     }
                 },
                 onQuit: { NSApp.terminate(nil) }
@@ -60,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             self.store = store
+            self.claudeStore = claudeStore
             self.registry = registry
             self.popoverCoordinator = popoverCoordinator
             self.statusItemController = statusItemController
@@ -67,6 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             observeStore(in: store, registry: registry)
             observeStatus(in: registry, statusItemController: statusItemController)
             observeRefreshEligibility(in: registry, store: store)
+            claudeStore.$snapshot.combineLatest(claudeStore.$lastError, claudeStore.$isRefreshing)
+                .sink { [weak registry] snapshot, error, refreshing in
+                    registry?.updateClaude(snapshot: snapshot, error: error, isRefreshing: refreshing)
+                }.store(in: &cancellables)
+            registry.$shouldRefreshClaude.removeDuplicates().sink { [weak claudeStore] enabled in
+                if enabled { Task { await claudeStore?.start() } }
+            }.store(in: &cancellables)
             installRefreshTimer()
             Task { await registry.discover() }
         } catch {
@@ -129,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc
     private func refreshTimerFired() {
+        if registry?.shouldRefreshClaude == true { Task { await claudeStore?.refresh() } }
         guard let store, registry?.shouldRefreshOpenAI == true else {
             return
         }

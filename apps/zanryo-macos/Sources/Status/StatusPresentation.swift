@@ -74,6 +74,14 @@ struct StatusPresentation: Equatable, Sendable {
                 || identifier.contains("5h")
         }
     }
+
+    static func claude(snapshot: ClaudeUsageSnapshot?, enabled: Bool, hasError: Bool, now: Date = Date()) -> StatusPresentation {
+        guard enabled, let snapshot, let limit = snapshot.preferredLimit else { return StatusPresentation(modules: []) }
+        let reset = StatusResetDuration(from: now, to: limit.resetsAt, calendar: .autoupdatingCurrent)
+        return StatusPresentation(modules: [ProviderModule(provider: .claude,
+            remainingPercent: Int(limit.remainingPercent.rounded()), reset: reset.compact,
+            resetSpoken: reset.spoken, isStale: hasError || snapshot.isStale(at: now))])
+    }
 }
 
 private struct StatusResetDuration {
