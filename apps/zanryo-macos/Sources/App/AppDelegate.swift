@@ -10,8 +10,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var refreshTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
 
+    var hasStartedCollectors: Bool { store != nil }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        // A hosted XCTest launch must not open/migrate the user's database or
+        // start authenticated collectors. Tests construct their own fixtures.
+        guard NSClassFromString("XCTestCase") == nil,
+              ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+            return
+        }
 
         do {
             let bridge = try RustBridge()
