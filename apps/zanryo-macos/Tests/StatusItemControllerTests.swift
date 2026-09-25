@@ -11,7 +11,7 @@ final class StatusItemControllerTests: XCTestCase {
             modules: [
                 ProviderModule(
                     provider: .openAI,
-                    remainingPercent: 15,
+                    usedPercent: 15,
                     reset: "5d 3h",
                     resetSpoken: "5 days and 3 hours",
                     isStale: false
@@ -60,14 +60,14 @@ final class StatusItemControllerTests: XCTestCase {
         let view = StatusItemContentView(frame: .zero)
         let openAI = ProviderModule(
             provider: .openAI,
-            remainingPercent: 15,
+            usedPercent: 15,
             reset: "5d 3h",
             resetSpoken: "5 days and 3 hours",
             isStale: false
         )
         let claude = ProviderModule(
             provider: .claude,
-            remainingPercent: 42,
+            usedPercent: 42,
             reset: "2h",
             resetSpoken: "2 hours",
             isStale: false

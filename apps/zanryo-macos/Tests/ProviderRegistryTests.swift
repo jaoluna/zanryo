@@ -80,7 +80,7 @@ final class ProviderRegistryTests: XCTestCase {
         )
 
         XCTAssertEqual(registry.state(for: .openAI).availability, .error)
-        XCTAssertEqual(registry.statusPresentation.modules.first?.remainingPercent, 40)
+        XCTAssertEqual(registry.statusPresentation.modules.first?.usedPercent, 60)
         XCTAssertTrue(registry.statusPresentation.modules.first?.isStale ?? false)
     }
 

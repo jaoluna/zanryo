@@ -63,8 +63,8 @@ final class PopoverDashboardModelTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(model.weekly?.percentage, 15)
-        XCTAssertEqual(model.spark.percentage, 88)
+        XCTAssertEqual(model.weekly?.percentage, 85)
+        XCTAssertEqual(model.spark.percentage, 12)
         XCTAssertEqual(model.forecastTitle, "Estimated forecast")
         XCTAssertEqual(model.forecastPaceText, "Current pace\n12.5%/day · 2.6%/5h")
         XCTAssertEqual(model.decisionRows.map(\.label), [
@@ -84,11 +84,11 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(stale.wordmarkAccessibilityLabel, "Zanryo")
         XCTAssertEqual(
             stale.weekly?.accessibilityDescription,
-            "Weekly quota: 15 percent remaining. Resets in 5 days and 3 hours."
+            "Weekly quota: 85 percent used. Resets in 5 days and 3 hours."
         )
         XCTAssertEqual(
             stale.spark.accessibilityDescription,
-            "Spark quota: 88 percent remaining. Resets in 2 hours."
+            "Spark quota: 12 percent used. Resets in 2 hours."
         )
         XCTAssertEqual(stale.footerText, "Cached data — may be out of date")
         XCTAssertEqual(loading.footerText, "Loading Codex quota data")
@@ -103,7 +103,7 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.forecastSectionAccessibilityLabel, "Weekly forecast.")
         XCTAssertEqual(
             model.chartAccessibilityLabel,
-            "Quota chart. Yellow is observed remaining quota, red is the current-pace forecast, and gray is the weekly one hundred percent to zero percent budget pace."
+            "Quota chart. Yellow is observed usage, red is the current-pace forecast, and gray is the weekly zero percent to one hundred percent budget pace."
         )
         XCTAssertEqual(model.loadingWeeklyAccessibilityLabel, "Weekly quota is loading")
     }
@@ -127,10 +127,10 @@ final class PopoverDashboardModelTests: XCTestCase {
         )
 
         XCTAssertEqual(model.headerText, "Updated now")
-        XCTAssertEqual(model.weekly?.percentage, 15)
+        XCTAssertEqual(model.weekly?.percentage, 85)
         XCTAssertEqual(model.weekly?.reset, "5d 3h")
         XCTAssertEqual(model.weekly?.resetSpoken, "5 days and 3 hours")
-        XCTAssertEqual(model.spark.percentage, 88)
+        XCTAssertEqual(model.spark.percentage, 12)
         XCTAssertEqual(model.spark.reset, "2h")
         XCTAssertEqual(model.spark.resetSpoken, "2 hours")
     }
@@ -228,7 +228,7 @@ final class PopoverDashboardModelTests: XCTestCase {
             model.decisionRows,
             [
                 PopoverMetric(label: "Estimated depletion", value: localAbbreviatedDate(depletion)),
-                PopoverMetric(label: "Projected at reset", value: "10% left"),
+                PopoverMetric(label: "Projected at reset", value: "90% used"),
                 PopoverMetric(label: "Allowed pace", value: "4%/day · 0.8%/5h"),
                 PopoverMetric(label: "Forecast confidence", value: "Low")
             ]
@@ -272,6 +272,27 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.forecastPaceText, "Current pace\n24%/day · 5%/5h")
         XCTAssertEqual(model.forecastMetrics.first?.value, "24%/day · 5%/5h")
         XCTAssertEqual(model.forecastMetrics[safe: 1]?.value, "12%/day · 2.5%/5h")
+    }
+
+    func testChartInvertsObservedForecastBudgetAndUncertaintyWithoutMutatingHistory() {
+        let dashboard = makeForecastSnapshot(observedPoint: 84, forecastPoint: 72, sustainablePoint: 70)
+        let model = PopoverDashboardModel.make(from: dashboard, now: now)
+        XCTAssertEqual(model.forecastSeries.map(\.usedPercent), [16, 28, 30])
+        let forecast = model.forecastSeries.first { $0.kind == .forecast }
+        XCTAssertEqual(forecast?.lowUncertainty, 26)
+        XCTAssertEqual(forecast?.highUncertainty, 30)
+        XCTAssertEqual(dashboard.forecast.chart.observed.first?.remainingPercent, 84)
+        XCTAssertEqual(dashboard.forecast.chart.forecast.first?.uncertainty.low, 70)
+    }
+
+    func testChartResetAndExhaustionUseZeroAndOneHundred() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(observedPoint: 100, forecastPoint: 0, sustainablePoint: -2),
+            now: now
+        )
+        XCTAssertEqual(model.forecastSeries.map(\.usedPercent), [0, 100, 100])
+        XCTAssertEqual(model.forecastSeries[1].lowUncertainty, 98)
+        XCTAssertEqual(model.forecastSeries[1].highUncertainty, 100)
     }
 
     private func makeForecastSnapshot(
