@@ -65,9 +65,6 @@ struct RateLimit: Decodable, Equatable, Sendable {
     let remainingPercent: Double
     let resetsAt: Date
     let observedAt: Date
-
-    // The bridge/history contract stays remaining; every UI shows used.
-    var usedPercent: Double { 100 - min(max(remainingPercent, 0), 100) }
 }
 
 struct QuotaSnapshot: Decodable, Equatable, Sendable {

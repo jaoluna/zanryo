@@ -25,10 +25,10 @@ pub fn format_history(limits: &[RateLimit]) -> String {
         .iter()
         .map(|limit| {
             format!(
-                "{} · {} · {}% used",
+                "{} · {} · {}% left",
                 limit.observed_at.format("%Y-%m-%d %H:%M UTC"),
                 limit.limit_id,
-                format_percent(100.0 - limit.remaining_percent)
+                format_percent(limit.remaining_percent)
             )
         })
         .collect::<Vec<_>>()
@@ -66,8 +66,8 @@ pub fn format_forecast(report: &ForecastReport, now: DateTime<Utc>) -> String {
 
 fn format_limit(label: &str, limit: &RateLimit, now: DateTime<Utc>) -> String {
     format!(
-        "{label} {}% used · reset in {}",
-        format_percent(100.0 - limit.remaining_percent),
+        "{label} {}% left · reset in {}",
+        format_percent(limit.remaining_percent),
         format_duration(limit.resets_at.signed_duration_since(now))
     )
 }
@@ -136,15 +136,15 @@ mod tests {
 
         assert_eq!(
             format_snapshot(&snapshot, now),
-            "Weekly 85% used · reset in 5d 3h\nSpark 28% used · reset in 6d"
+            "Weekly 15% left · reset in 5d 3h\nSpark 72% left · reset in 6d"
         );
     }
 
     #[test]
-    fn used_scale_preserves_history_and_provider_boundaries() {
+    fn remaining_scale_preserves_history_and_provider_boundaries() {
         let now = Utc.with_ymd_and_hms(2026, 9, 25, 20, 0, 0).unwrap();
         for provider in [ProviderId::OpenAi, ProviderId::Claude] {
-            for (remaining, used) in [(100.0, "0"), (75.0, "25"), (0.0, "100")] {
+            for remaining in [100.0, 75.0, 0.0] {
                 let limit = RateLimit::new(
                     provider,
                     LimitKind::Weekly,
@@ -156,7 +156,7 @@ mod tests {
                 .unwrap();
                 assert!(
                     format_history(std::slice::from_ref(&limit))
-                        .ends_with(&format!("{used}% used"))
+                        .ends_with(&format!("{remaining}% left"))
                 );
                 assert_eq!(limit.remaining_percent, remaining);
                 assert_eq!(limit.provider, provider);

@@ -12,11 +12,11 @@ final class StatusPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.modules.count, 1)
         XCTAssertEqual(presentation.modules[0].provider, .openAI)
-        XCTAssertEqual(presentation.modules[0].text, "85% · 5d 3h")
+        XCTAssertEqual(presentation.modules[0].text, "15% · 5d 3h")
         XCTAssertFalse(presentation.dragonOnly)
         XCTAssertEqual(
             presentation.accessibilityLabel,
-            "OpenAI has used 85 percent. Resets in 5 days and 3 hours."
+            "OpenAI has 15 percent remaining. Resets in 5 days and 3 hours."
         )
     }
 
@@ -38,10 +38,10 @@ final class StatusPresentationTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(presentation.modules[0].text, "39% · 3h")
+        XCTAssertEqual(presentation.modules[0].text, "61% · 3h")
         XCTAssertEqual(
             presentation.accessibilityLabel,
-            "OpenAI has used 39 percent. Resets in 3 hours."
+            "OpenAI has 61 percent remaining. Resets in 3 hours."
         )
     }
 
@@ -51,10 +51,10 @@ final class StatusPresentationTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(presentation.modules[0].text, "85% · 5d 3h ·")
+        XCTAssertEqual(presentation.modules[0].text, "15% · 5d 3h ·")
         XCTAssertEqual(
             presentation.accessibilityLabel,
-            "OpenAI has used 85 percent. Resets in 5 days and 3 hours. Data may be outdated."
+            "OpenAI has 15 percent remaining. Resets in 5 days and 3 hours. Data may be outdated."
         )
     }
 
@@ -76,21 +76,21 @@ final class StatusPresentationTests: XCTestCase {
     func testProviderModulesStayInOpenAIThenClaudeOrder() {
         let presentation = StatusPresentation(
             modules: [
-                ProviderModule(provider: .claude, usedPercent: 42, reset: "2h", resetSpoken: "2 hours", isStale: false),
-                ProviderModule(provider: .openAI, usedPercent: 75, reset: "4d", resetSpoken: "4 days", isStale: false)
+                ProviderModule(provider: .claude, remainingPercent: 42, reset: "2h", resetSpoken: "2 hours", isStale: false),
+                ProviderModule(provider: .openAI, remainingPercent: 75, reset: "4d", resetSpoken: "4 days", isStale: false)
             ]
         )
 
         XCTAssertEqual(presentation.modules.map(\.provider), [.openAI, .claude])
         XCTAssertEqual(presentation.modules.map(\.text), ["75% · 4d", "42% · 2h"])
-        XCTAssertTrue(presentation.modules.allSatisfy { $0.accessibilityLabel.contains("percent.") })
+        XCTAssertTrue(presentation.modules.allSatisfy { $0.accessibilityLabel.contains("percent remaining") })
     }
 
-    func testUsedScaleAscendsFromZeroToOneHundredWithoutChangingSnapshot() {
-        for (remaining, used) in [(100.0, 0), (75.0, 25), (0.0, 100)] {
+    func testRemainingScaleDescendsFromFullToExhaustedWithoutChangingSnapshot() {
+        for remaining in [100.0, 75.0, 0.0] {
             let snapshot = makeSnapshot(remaining: remaining, freshness: .fresh)
             let presentation = StatusPresentation.make(snapshot: snapshot, now: now)
-            XCTAssertEqual(presentation.modules.first?.text, "\(used)% · 5d 3h")
+            XCTAssertEqual(presentation.modules.first?.text, "\(Int(remaining))% · 5d 3h")
             XCTAssertEqual(snapshot.quota.weekly.remainingPercent, remaining)
         }
     }

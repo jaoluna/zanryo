@@ -384,14 +384,14 @@ struct PopoverView: View {
     }
 
     private var metricExplanation: some View {
-        Text("Usage: 0% to 100%. Yellow is observed. Red is the current-pace forecast. Gray is the weekly budget pace.")
+        Text("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly 100% to 0% budget pace.")
             .font(.system(size: 10.2, weight: .medium))
             .foregroundStyle(PopoverColor.secondaryForeground)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(PopoverColor.forecastSurface.opacity(0.55))
-            .accessibilityLabel("Usage: zero percent to one hundred percent. Yellow is observed. Red is the current-pace forecast. Gray is the weekly budget pace.")
+            .accessibilityLabel("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly one hundred percent to zero percent budget pace.")
     }
 
     private var footer: some View {

@@ -48,16 +48,16 @@ The native macOS menu bar keeps the important information visible without openin
 
 - a compact dragon-Z and adaptive tail;
 - the active provider symbol;
-- used quota, increasing from 0% to 100%;
+- remaining quota;
 - time until reset.
 
 Open the popover for the complete view:
 
 - Weekly and Spark allowances with independent reset times;
-- a full-cycle usage forecast from 0% at cycle start to 100% at exhaustion;
+- a full-cycle forecast from 100% at cycle start to reset;
 - current usage pace per day and per five hours;
 - estimated depletion time;
-- projected usage at reset;
+- projected quota remaining at reset;
 - allowed pace and forecast confidence;
 - authenticated Codex plan when the official app-server exposes it;
 - manual refresh and provider visibility controls.
@@ -66,13 +66,17 @@ OpenAI is the first provider. Zanryo already detects an installed Claude Code CL
 
 ## Reading the forecast
 
+Every visible quota uses **remaining**, from **100% available to 0% exhausted**.
+Providers and windows stay independent; quotas are never summed. A source that
+reports used quota is converted once at collection (`remaining = 100 - used`).
+The SQLite/JSON `remaining_percent` contract is unchanged. Missing data stays
+unavailable, never a fabricated zero.
+
 The chart uses three clear lines:
 
-- **Yellow, Observed:** recorded quota used during the current cycle.
+- **Yellow, Observed:** recorded quota remaining during the current cycle.
 - **Red, Depletion:** the current-pace projection from the latest observation.
-- **Gray, Budget pace:** a linear reference from 0% at cycle start to 100% at reset.
-
-All visible percentages use the same **used** scale, independently per provider and window. A reset returns usage toward 0%; 100% means exhausted. Existing history and the JSON API retain `remaining_percent` for compatibility; the display converts it without rewriting saved samples. Missing data remains unavailable, not zero. Older screenshots may show the previous remaining-quota scale.
+- **Gray, Budget pace:** a linear reference from 100% at cycle start to 0% at reset.
 
 Forecasts are estimates. Zanryo reports low, medium, or high confidence according to the available history and avoids presenting certainty when the data does not support it.
 
