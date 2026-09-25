@@ -8,8 +8,8 @@ use std::sync::{Mutex, OnceLock};
 use chrono::{Duration, TimeZone, Utc};
 use tempfile::tempdir;
 use zanryo_bridge::{
-    BridgeHandle, zanryo_cached_json, zanryo_create, zanryo_destroy,
-    zanryo_provider_discovery_json, zanryo_refresh_json, zanryo_string_free,
+    BridgeHandle, zanryo_cached_json, zanryo_destroy, zanryo_provider_discovery_json,
+    zanryo_refresh_json, zanryo_string_free,
 };
 use zanryo_core::{AccountContext, HistoryRepository, LimitKind, PlanType, ProviderId, RateLimit};
 
@@ -90,8 +90,11 @@ fn provider_discovery_json_uses_the_versioned_envelope_and_openai_wire_id() {
 }
 
 #[test]
-fn create_and_destroy_handle_are_safe() {
-    let handle = zanryo_create();
+fn create_and_destroy_isolated_handle_are_safe() {
+    let directory = tempdir().unwrap();
+    let handle = Box::into_raw(Box::new(BridgeHandle::open(
+        directory.path().join("history.sqlite3"),
+    )));
 
     assert!(!handle.is_null());
 
@@ -99,6 +102,44 @@ fn create_and_destroy_handle_are_safe() {
         zanryo_destroy(handle);
         zanryo_destroy(std::ptr::null_mut());
     }
+}
+
+#[test]
+fn claude_cached_envelope_preserves_optional_windows_and_provider() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("history.sqlite3");
+    let history = HistoryRepository::open(&path).unwrap();
+    let now = Utc::now();
+    history
+        .insert_limits(&[RateLimit::new(
+            ProviderId::Claude,
+            LimitKind::FiveHour,
+            "claude_five_hour",
+            66.0,
+            now + Duration::hours(2),
+            now,
+        )
+        .unwrap()])
+        .unwrap();
+    drop(history);
+    let handle = Box::into_raw(Box::new(BridgeHandle::open(&path)));
+    let json = unsafe { owned_json(zanryo_bridge::zanryo_claude_cached_json(handle)) };
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(value["data"]["provider"], "claude");
+    assert_eq!(value["data"]["five_hour"]["remaining_percent"], 66.0);
+    assert!(value["data"]["weekly"].is_null());
+    assert_eq!(value["data"]["freshness"], "stale");
+    let null_path = unsafe {
+        owned_json(zanryo_bridge::zanryo_claude_refresh_json(
+            handle,
+            std::ptr::null(),
+        ))
+    };
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&null_path).unwrap()["ok"],
+        false
+    );
+    unsafe { zanryo_destroy(handle) };
 }
 
 #[test]

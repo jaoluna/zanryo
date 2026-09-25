@@ -8,12 +8,14 @@ use zanryo_core::{
 };
 
 use crate::envelope::BridgeError;
+use zanryo_core::claude::{ClaudeUsageProbe, ClaudeUsageSnapshot, ProbeConfig};
 
 pub struct BridgeHandle {
     runtime: Option<Runtime>,
     history: Option<HistoryRepository>,
     service: Mutex<Option<Arc<QuotaService<CodexAppServer>>>>,
     initialization_error: Option<BridgeError>,
+    claude_lock: Mutex<()>,
 }
 
 impl Default for BridgeHandle {
@@ -52,6 +54,7 @@ impl BridgeHandle {
             history: history.ok(),
             service: Mutex::new(None),
             initialization_error,
+            claude_lock: Mutex::new(()),
         }
     }
 
@@ -65,6 +68,50 @@ impl BridgeHandle {
             .as_ref()
             .ok_or_else(|| BridgeError::internal("history is unavailable"))?;
         cached_dashboard(history, ProviderId::OpenAi, chrono::Utc::now()).map_err(BridgeError::from)
+    }
+
+    pub fn claude_cached(&self) -> Result<Option<ClaudeUsageSnapshot>, BridgeError> {
+        let history = self
+            .history
+            .as_ref()
+            .ok_or_else(|| BridgeError::internal("history is unavailable"))?;
+        ClaudeUsageSnapshot::cached(history).map_err(BridgeError::from)
+    }
+
+    pub fn claude_refresh(
+        &self,
+        working_directory: &Path,
+    ) -> Result<ClaudeUsageSnapshot, BridgeError> {
+        let _guard = self
+            .claude_lock
+            .try_lock()
+            .map_err(|_| BridgeError::internal("Claude refresh already running"))?;
+        let history = self
+            .history
+            .as_ref()
+            .ok_or_else(|| BridgeError::internal("history is unavailable"))?;
+        let result = (|| {
+            let executable = zanryo_core::discover_installed_providers()
+                .into_iter()
+                .find(|item| item.provider == ProviderId::Claude)
+                .ok_or_else(|| BridgeError {
+                    code: "claude_unavailable",
+                    message: "Claude CLI was not found".into(),
+                })?
+                .executable_path;
+            let limits =
+                ClaudeUsageProbe::new(ProbeConfig::new(executable, working_directory.to_owned()))
+                    .read()
+                    .map_err(|error| BridgeError {
+                        code: "claude_unavailable",
+                        message: error.to_string(),
+                    })?;
+            ClaudeUsageSnapshot::record(history, limits).map_err(BridgeError::from)
+        })();
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => self.claude_cached()?.ok_or(error),
+        }
     }
 
     pub fn refresh(&self) -> Result<DashboardSnapshot, BridgeError> {
