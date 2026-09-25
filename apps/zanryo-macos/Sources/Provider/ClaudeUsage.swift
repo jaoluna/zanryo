@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 struct ClaudeUsageSnapshot: Decodable, Equatable, Sendable {
     let provider: ProviderId
@@ -23,6 +24,7 @@ protocol ClaudeUsageProviding: Sendable {
 
 @MainActor
 final class ClaudeUsageStore: ObservableObject {
+    private static let logger = Logger(subsystem: "io.joaoluna.Zanryo", category: "ClaudeUsage")
     @Published private(set) var snapshot: ClaudeUsageSnapshot?
     @Published private(set) var lastError: DisplayError?
     @Published private(set) var isRefreshing = false
@@ -46,6 +48,7 @@ final class ClaudeUsageStore: ObservableObject {
            now.timeIntervalSince(lastAttempt) < 300 { return }
         lastAttempt = now
         isRefreshing = true
+        Self.logger.notice("Native quota refresh started")
         let source = source
         let task = Task { [weak self] in
             do {
@@ -53,7 +56,15 @@ final class ClaudeUsageStore: ObservableObject {
                 self?.snapshot = result
                 self?.lastError = result.freshness == .stale
                     ? DisplayError(code: "claude_stale", message: "Refresh failed. Showing the last saved reading.") : nil
+                Self.logger.notice("Native quota refresh returned; stale: \(result.isStale())")
             } catch {
+                // This transport code contains only our static, sanitized
+                // stage reasons. Other errors may contain paths: do not log them.
+                if case let BridgeDecodeError.remote(code, message) = error, code == "claude_unavailable" {
+                    Self.logger.error("Native quota refresh failed: \(message, privacy: .public)")
+                } else {
+                    Self.logger.error("Native quota refresh failed outside transport; details shown only in app")
+                }
                 self?.lastError = error as? DisplayError
                     ?? DisplayError(code: "claude_unavailable", message: error.localizedDescription)
             }
