@@ -48,16 +48,16 @@ The native macOS menu bar keeps the important information visible without openin
 
 - a compact dragon-Z and adaptive tail;
 - the active provider symbol;
-- remaining quota;
+- used quota, increasing from 0% to 100%;
 - time until reset.
 
 Open the popover for the complete view:
 
 - Weekly and Spark allowances with independent reset times;
-- a full-cycle forecast from 100% at cycle start to reset;
+- a full-cycle usage forecast from 0% at cycle start to 100% at exhaustion;
 - current usage pace per day and per five hours;
 - estimated depletion time;
-- projected quota remaining at reset;
+- projected usage at reset;
 - allowed pace and forecast confidence;
 - authenticated Codex plan when the official app-server exposes it;
 - manual refresh and provider visibility controls.
@@ -68,9 +68,11 @@ OpenAI is the first provider. Zanryo already detects an installed Claude Code CL
 
 The chart uses three clear lines:
 
-- **Yellow, Observed:** recorded quota remaining during the current cycle.
+- **Yellow, Observed:** recorded quota used during the current cycle.
 - **Red, Depletion:** the current-pace projection from the latest observation.
-- **Gray, Budget pace:** a linear reference from 100% at cycle start to 0% at reset.
+- **Gray, Budget pace:** a linear reference from 0% at cycle start to 100% at reset.
+
+All visible percentages use the same **used** scale, independently per provider and window. A reset returns usage toward 0%; 100% means exhausted. Existing history and the JSON API retain `remaining_percent` for compatibility; the display converts it without rewriting saved samples. Missing data remains unavailable, not zero. Older screenshots may show the previous remaining-quota scale.
 
 Forecasts are estimates. Zanryo reports low, medium, or high confidence according to the available history and avoids presenting certainty when the data does not support it.
 
