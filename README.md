@@ -68,6 +68,8 @@ Claude collection currently supports the observed CLI **2.1.282** screen format.
 
 Freshness is inferred from the supported CLI's refresh transition and completed display, not a server timestamp or an independent API receipt. An unrecognized CLI error or future screen change can require a collector update. Claude collection currently requires Unix terminal support; it fails closed on other platforms.
 
+The Claude pane includes its own weekly history chart, observed pace, estimated remaining quota at reset, allowed pace, and confidence. It uses stored Claude weekly samples only, with no extra polling or model calls. A forecast requires at least three readings spanning 30 minutes in the current weekly cycle; until then, only real observations appear. Stale readings keep their history but hide projections. The five-hour quota and its reset remain independent. Unlike the legacy Codex chart, Claude's observed curve never inserts an assumed 100% reading at cycle start.
+
 ## Reading the forecast
 
 Every visible quota uses **remaining**, from **100% available to 0% exhausted**.
