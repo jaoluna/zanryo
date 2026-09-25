@@ -1,3 +1,4 @@
+pub mod claude;
 mod dashboard;
 mod error;
 mod forecast;
