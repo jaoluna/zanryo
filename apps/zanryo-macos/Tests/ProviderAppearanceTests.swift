@@ -50,9 +50,6 @@ final class ProviderAppearanceTests: XCTestCase {
         let suite = "ProviderAppearanceTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
-        await registry.discover()
-        registry.select(.claude)
         let now = Date()
         let snapshot = ClaudeUsageSnapshot(provider: .claude,
             fiveHour: RateLimit(kind: .fiveHour, limitId: "claude_five_hour", remainingPercent: 100,
@@ -60,15 +57,29 @@ final class ProviderAppearanceTests: XCTestCase {
             weekly: RateLimit(kind: .weekly, limitId: "claude_weekly", remainingPercent: 97,
                              resetsAt: now.addingTimeInterval(432000), observedAt: now), freshness: .fresh)
         for hasData in [true, false] {
+            let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
+            await registry.discover()
+            registry.select(.claude)
             registry.updateClaude(snapshot: hasData ? snapshot : nil, error: nil, isRefreshing: false)
             let store = ZanryoStore(provider: StyleDashboard())
             let host = NSHostingView(rootView: PopoverView(store: store, registry: registry))
             host.frame = NSRect(x: 0, y: 0, width: 390, height: 590)
             host.appearance = NSAppearance(named: .darkAqua)
+            let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.contentView = host
+            // Give SwiftUI's scheduled update a turn before capturing an offscreen view.
+            try await Task.sleep(for: .milliseconds(50))
             host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
             let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
             host.cacheDisplay(in: host.bounds, to: bitmap)
-            let attachment = XCTAttachment(image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: host.bounds.size))
+            let colors = Set(stride(from: 0, to: bitmap.pixelsHigh, by: 8).flatMap { y in
+                stride(from: 0, to: bitmap.pixelsWide, by: 8).compactMap { x in bitmap.colorAt(x: x, y: y)?.description }
+            })
+            XCTAssertGreaterThan(colors.count, 10, "A blank offscreen capture is not visual evidence.")
+            // Freeze encoded pixels now; don't let a deferred NSImage draw outlive its host.
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
             attachment.name = hasData ? "claude-style-fresh" : "claude-style-unavailable"
             attachment.lifetime = .keepAlways
             add(attachment)
