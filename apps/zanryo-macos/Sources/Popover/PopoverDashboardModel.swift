@@ -9,7 +9,7 @@ enum ForecastSeriesKind: String, CaseIterable, Sendable {
 struct PopoverForecastPoint: Equatable, Sendable {
     let kind: ForecastSeriesKind
     let at: Date
-    let remainingPercent: Double
+    let usedPercent: Double
     let lowUncertainty: Double?
     let highUncertainty: Double?
 }
@@ -106,13 +106,13 @@ struct PopoverDashboardModel: Equatable, Sendable {
         let weekly = QuotaDisplay(
             label: "Weekly",
             isAvailable: true,
-            valueText: "\(Int(dashboard.quota.weekly.remainingPercent.rounded()))%",
-            percentage: Int(dashboard.quota.weekly.remainingPercent.rounded()),
+            valueText: "\(Int(dashboard.quota.weekly.usedPercent.rounded()))%",
+            percentage: Int(dashboard.quota.weekly.usedPercent.rounded()),
             reset: weeklyReset.compact,
             resetSpoken: weeklyReset.spoken,
             accessibilityDescription: quotaAccessibilityDescription(
                 label: "Weekly",
-                percentage: Int(dashboard.quota.weekly.remainingPercent.rounded()),
+                percentage: Int(dashboard.quota.weekly.usedPercent.rounded()),
                 reset: weeklyReset.spoken
             )
         )
@@ -121,13 +121,13 @@ struct PopoverDashboardModel: Equatable, Sendable {
             return QuotaDisplay(
                 label: "Spark",
                 isAvailable: true,
-                valueText: "\(Int(limit.remainingPercent.rounded()))%",
-                percentage: Int(limit.remainingPercent.rounded()),
+                valueText: "\(Int(limit.usedPercent.rounded()))%",
+                percentage: Int(limit.usedPercent.rounded()),
                 reset: reset.compact,
                 resetSpoken: reset.spoken,
                 accessibilityDescription: quotaAccessibilityDescription(
                     label: "Spark",
-                    percentage: Int(limit.remainingPercent.rounded()),
+                    percentage: Int(limit.usedPercent.rounded()),
                     reset: reset.spoken
                 )
             )
@@ -250,7 +250,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
     }
 
     private static let forecastSectionAccessibilityText = "Weekly forecast."
-    private static let chartAccessibilityText = "Quota chart. Yellow is observed remaining quota, red is the current-pace forecast, and gray is the weekly one hundred percent to zero percent budget pace."
+    private static let chartAccessibilityText = "Quota chart. Yellow is observed usage, red is the current-pace forecast, and gray is the weekly zero percent to one hundred percent budget pace."
     private static let loadingWeeklyAccessibilityText = "Weekly quota is loading"
     private static let refreshErrorAccessibilityText = "Refresh error"
 
@@ -272,7 +272,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
                 PopoverForecastPoint(
                     kind: .observed,
                     at: $0.at,
-                    remainingPercent: clampPercent($0.remainingPercent),
+                    usedPercent: usedPercent(fromRemaining: $0.remainingPercent),
                     lowUncertainty: nil,
                     highUncertainty: nil
                 )
@@ -283,9 +283,9 @@ struct PopoverDashboardModel: Equatable, Sendable {
                 PopoverForecastPoint(
                     kind: .forecast,
                     at: $0.at,
-                    remainingPercent: clampPercent($0.remainingPercent),
-                    lowUncertainty: clampOptional($0.uncertainty.low),
-                    highUncertainty: clampOptional($0.uncertainty.high)
+                    usedPercent: usedPercent(fromRemaining: $0.remainingPercent),
+                    lowUncertainty: usedPercent(fromRemaining: $0.uncertainty.high),
+                    highUncertainty: usedPercent(fromRemaining: $0.uncertainty.low)
                 )
             }
         )
@@ -294,7 +294,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
                 PopoverForecastPoint(
                     kind: .sustainable,
                     at: $0.at,
-                    remainingPercent: clampPercent($0.remainingPercent),
+                    usedPercent: usedPercent(fromRemaining: $0.remainingPercent),
                     lowUncertainty: nil,
                     highUncertainty: nil
                 )
@@ -372,7 +372,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
             return "Estimating…"
         }
 
-        return "\(formatPercent(clampPercent(remainingPercent)))% left"
+        return "\(formatPercent(usedPercent(fromRemaining: remainingPercent)))% used"
     }
 
     private static func forecastPaceText(for forecast: ForecastReport) -> String {
@@ -432,7 +432,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
         percentage: Int,
         reset: String
     ) -> String {
-        "\(label) quota: \(percentage) percent remaining. Resets in \(reset)."
+        "\(label) quota: \(percentage) percent used. Resets in \(reset)."
     }
 
     private static func confidenceLabel(_ confidence: ForecastConfidence) -> String {
@@ -473,8 +473,8 @@ struct PopoverDashboardModel: Equatable, Sendable {
         min(max(value, 0), 100)
     }
 
-    private static func clampOptional(_ value: Double) -> Double {
-        clampPercent(value)
+    private static func usedPercent(fromRemaining value: Double) -> Double {
+        100 - clampPercent(value)
     }
 
     private struct UpdateState: Equatable, Sendable {

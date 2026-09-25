@@ -2,17 +2,17 @@ import Foundation
 
 struct ProviderModule: Equatable, Sendable {
     let provider: ProviderId
-    let remainingPercent: Int
+    let usedPercent: Int
     let reset: String
     let resetSpoken: String
     let isStale: Bool
 
     var text: String {
-        "\(remainingPercent)% · \(reset)\(isStale ? " ·" : "")"
+        "\(usedPercent)% · \(reset)\(isStale ? " ·" : "")"
     }
 
     var accessibilityLabel: String {
-        var label = "\(provider.displayName) has \(remainingPercent) percent remaining. Resets in \(resetSpoken)."
+        var label = "\(provider.displayName) has used \(usedPercent) percent. Resets in \(resetSpoken)."
         if isStale {
             label += " Data may be outdated."
         }
@@ -55,7 +55,7 @@ struct StatusPresentation: Equatable, Sendable {
             modules: [
                 ProviderModule(
                     provider: .openAI,
-                    remainingPercent: Int(limit.remainingPercent.rounded()),
+                    usedPercent: Int(limit.usedPercent.rounded()),
                     reset: reset.compact,
                     resetSpoken: reset.spoken,
                     isStale: isStaleOverride ?? (snapshot.quota.freshness == .stale)

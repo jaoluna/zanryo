@@ -79,7 +79,7 @@ struct ForecastChartView: View {
                 ForEach(sustainable, id: \.at) { point in
                     LineMark(
                         x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
+                        y: .value("Used", point.usedPercent)
                     )
                     .foregroundStyle(by: .value("Series", "Budget pace"))
                     .interpolationMethod(.linear)
@@ -91,7 +91,7 @@ struct ForecastChartView: View {
                 if let currentPoint {
                     PointMark(
                         x: .value("Time", currentPoint.at),
-                        y: .value("Remaining", currentPoint.remainingPercent)
+                        y: .value("Used", currentPoint.usedPercent)
                     )
                     .symbolSize(32)
                     .foregroundStyle(by: .value("Series", "Observed"))
@@ -100,7 +100,7 @@ struct ForecastChartView: View {
                 ForEach(observed, id: \.at) { point in
                     LineMark(
                         x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
+                        y: .value("Used", point.usedPercent)
                     )
                     .foregroundStyle(by: .value("Series", "Observed"))
                     .interpolationMethod(.monotone)
@@ -111,7 +111,7 @@ struct ForecastChartView: View {
                     if point.at == observed.last?.at {
                         PointMark(
                             x: .value("Time", point.at),
-                            y: .value("Remaining", point.remainingPercent)
+                            y: .value("Used", point.usedPercent)
                         )
                         .symbolSize(26)
                         .foregroundStyle(by: .value("Series", "Observed"))
@@ -121,7 +121,7 @@ struct ForecastChartView: View {
                 ForEach(forecast, id: \.at) { point in
                     LineMark(
                         x: .value("Time", point.at),
-                        y: .value("Remaining", point.remainingPercent)
+                        y: .value("Used", point.usedPercent)
                     )
                     .foregroundStyle(by: .value("Series", "Depletion"))
                     .interpolationMethod(.linear)
@@ -131,10 +131,10 @@ struct ForecastChartView: View {
                 }
 
                 if let depletionPoint = forecast.last,
-                   depletionPoint.remainingPercent <= 0.01 {
+                   depletionPoint.usedPercent >= 99.99 {
                     PointMark(
                         x: .value("Time", depletionPoint.at),
-                        y: .value("Remaining", depletionPoint.remainingPercent)
+                        y: .value("Used", depletionPoint.usedPercent)
                     )
                     .symbolSize(22)
                     .foregroundStyle(by: .value("Series", "Depletion"))

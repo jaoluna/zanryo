@@ -25,10 +25,10 @@ pub fn format_history(limits: &[RateLimit]) -> String {
         .iter()
         .map(|limit| {
             format!(
-                "{} · {} · {}% left",
+                "{} · {} · {}% used",
                 limit.observed_at.format("%Y-%m-%d %H:%M UTC"),
                 limit.limit_id,
-                format_percent(limit.remaining_percent)
+                format_percent(100.0 - limit.remaining_percent)
             )
         })
         .collect::<Vec<_>>()
@@ -66,8 +66,8 @@ pub fn format_forecast(report: &ForecastReport, now: DateTime<Utc>) -> String {
 
 fn format_limit(label: &str, limit: &RateLimit, now: DateTime<Utc>) -> String {
     format!(
-        "{label} {}% left · reset in {}",
-        format_percent(limit.remaining_percent),
+        "{label} {}% used · reset in {}",
+        format_percent(100.0 - limit.remaining_percent),
         format_duration(limit.resets_at.signed_duration_since(now))
     )
 }
@@ -102,7 +102,7 @@ fn format_duration(duration: chrono::Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_forecast, format_snapshot};
+    use super::{format_forecast, format_history, format_snapshot};
     use chrono::{Duration, TimeZone, Utc};
     use zanryo_core::{
         ChartSeries, ForecastConfidence, ForecastRange, ForecastReport, ForecastStatus, Freshness,
@@ -136,8 +136,32 @@ mod tests {
 
         assert_eq!(
             format_snapshot(&snapshot, now),
-            "Weekly 15% left · reset in 5d 3h\nSpark 72% left · reset in 6d"
+            "Weekly 85% used · reset in 5d 3h\nSpark 28% used · reset in 6d"
         );
+    }
+
+    #[test]
+    fn used_scale_preserves_history_and_provider_boundaries() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 25, 20, 0, 0).unwrap();
+        for provider in [ProviderId::OpenAi, ProviderId::Claude] {
+            for (remaining, used) in [(100.0, "0"), (75.0, "25"), (0.0, "100")] {
+                let limit = RateLimit::new(
+                    provider,
+                    LimitKind::Weekly,
+                    "weekly",
+                    remaining,
+                    now + Duration::days(7),
+                    now,
+                )
+                .unwrap();
+                assert!(
+                    format_history(std::slice::from_ref(&limit))
+                        .ends_with(&format!("{used}% used"))
+                );
+                assert_eq!(limit.remaining_percent, remaining);
+                assert_eq!(limit.provider, provider);
+            }
+        }
     }
 
     #[test]
