@@ -7,6 +7,16 @@ struct ClaudeUsageSnapshot: Decodable, Equatable, Sendable {
     let fiveHour: RateLimit?
     let weekly: RateLimit?
     let freshness: Freshness
+    let weeklyForecast: ForecastReport?
+
+    init(provider: ProviderId, fiveHour: RateLimit?, weekly: RateLimit?, freshness: Freshness,
+         weeklyForecast: ForecastReport? = nil) {
+        self.provider = provider
+        self.fiveHour = fiveHour
+        self.weekly = weekly
+        self.freshness = freshness
+        self.weeklyForecast = weeklyForecast
+    }
 
     var preferredLimit: RateLimit? { fiveHour ?? weekly }
     var windows: [RateLimit] { [fiveHour, weekly].compactMap { $0 } }

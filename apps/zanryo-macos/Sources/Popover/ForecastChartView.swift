@@ -4,6 +4,9 @@ import SwiftUI
 struct ForecastChartView: View {
     let series: [PopoverForecastPoint]
     let accessibilityLabel: String
+    var observedColor: Color = PopoverColor.chartSol
+    var displayDomain: ClosedRange<Date>? = nil
+    var onlyAvailableLegends = false
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -49,6 +52,7 @@ struct ForecastChartView: View {
     }
 
     private var timelineRange: (start: Date, end: Date)? {
+        if let displayDomain { return (displayDomain.lowerBound, displayDomain.upperBound) }
         let sustainableDates = sustainable.map(\.at)
         if let start = sustainableDates.min(),
            let end = sustainableDates.max(),
@@ -143,7 +147,7 @@ struct ForecastChartView: View {
             .chartYScale(domain: 0 ... 100)
             .chartXScale(domain: timelineDomain)
             .chartForegroundStyleScale([
-                "Observed": PopoverColor.chartSol,
+                "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
                 "Budget pace": PopoverColor.chartLuna
             ])
@@ -190,9 +194,13 @@ struct ForecastChartView: View {
                     )
             }
             HStack(spacing: 12) {
-                legendItem("Observed", color: PopoverColor.chartSol, dashed: false)
-                legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
-                legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
+                legendItem("Observed", color: observedColor, dashed: false)
+                if !onlyAvailableLegends || !forecast.isEmpty {
+                    legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
+                }
+                if !onlyAvailableLegends || !sustainable.isEmpty {
+                    legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
