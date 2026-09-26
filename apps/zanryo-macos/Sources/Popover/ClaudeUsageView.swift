@@ -3,8 +3,8 @@ import SwiftUI
 
 struct ClaudeUsageView: View {
     @ObservedObject var registry: ProviderRegistry
-    @State var chartMode: ClaudeChartMode = .history
-    private var model: ClaudeDashboardModel {
+    var chartMode: QuotaChartMode = .overview
+    private var model: WeeklyOutlookModel {
         .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil)
     }
 
@@ -12,14 +12,14 @@ struct ClaudeUsageView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    quotaStrip
+                    QuotaStripView(provider: "Claude", windows: windows, accent: PopoverColor.claudeAccent,
+                        emptyText: registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
                     divider
-                    chartSection
+                    WeeklyChartView(timeline: .init(series: model.series, reset: registry.claudeSnapshot?.weekly?.resetsAt),
+                        pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude",
+                        confidence: model.rows.first { $0.label == "Confidence" }?.value, mode: chartMode)
                     divider
-                    metricRows
-                    Text(model.explanation).font(.system(size: 10.2, weight: .medium))
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
+                    OutlookMetricsView(rows: model.rows, explanation: model.explanation)
                     if let error = registry.claudeError {
                         Text(error.message).font(.system(size: 11)).foregroundStyle(PopoverColor.warning)
                             .fixedSize(horizontal: false, vertical: true)
@@ -33,110 +33,26 @@ struct ClaudeUsageView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var quotaStrip: some View {
-        HStack(spacing: 0) {
-            if let five = registry.claudeSnapshot?.fiveHour { window(five, title: "5 HOURS REMAINING") }
-            if registry.claudeSnapshot?.fiveHour != nil && registry.claudeSnapshot?.weekly != nil {
-                divider.padding(.vertical, 12)
-            }
-            if let weekly = registry.claudeSnapshot?.weekly { window(weekly, title: "WEEKLY REMAINING") }
-            if registry.claudeSnapshot == nil {
-                Text(registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
-                    .font(.system(size: 16, weight: .medium)).padding(16)
-            }
-        }.fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func window(_ limit: RateLimit, title: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 9.4, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-            Text("\(Int(limit.remainingPercent.rounded()))%")
-                .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.claudeAccent)
-            Text("Resets \(limit.resetsAt.formatted(date: .abbreviated, time: .shortened))")
-                .font(.system(size: 9.4)).foregroundStyle(PopoverColor.secondaryForeground)
-                .fixedSize(horizontal: false, vertical: true)
-                .help("Local time (\(TimeZone.current.identifier)). In \(ResetDuration(from: Date(), to: limit.resetsAt).compact).")
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16).padding(.vertical, 12)
-    }
-
-    private var chartSection: some View {
-        let dashboard = model
-        let mode: ClaudeChartMode = dashboard.hasProjection ? chartMode : .history
-        return VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("WEEKLY QUOTA").font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(PopoverColor.claudeAccent)
-                Spacer(minLength: 4)
-                Text(model.pace).font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(PopoverColor.secondaryForeground)
-            }
-            HStack(spacing: 4) {
-                ForEach(ClaudeChartMode.allCases, id: \.self) { choice in
-                    Button { chartMode = choice } label: {
-                        Text(choice.rawValue).font(.system(size: 11, weight: .semibold))
-                            .frame(maxWidth: .infinity).padding(.vertical, 5)
-                            .background(mode == choice ? PopoverColor.background : .clear,
-                                        in: RoundedRectangle(cornerRadius: 5))
-                            .foregroundStyle(mode == choice ? PopoverColor.foreground : PopoverColor.secondaryForeground)
-                    }.buttonStyle(.plain)
-                        .disabled(choice == .projection && !dashboard.hasProjection)
-                        .opacity(choice == .projection && !dashboard.hasProjection ? 0.4 : 1)
-                        .accessibilityAddTraits(mode == choice ? .isSelected : [])
-                }
-            }.padding(3).background(PopoverColor.chartSurface, in: RoundedRectangle(cornerRadius: 7))
-            if dashboard.series.isEmpty {
-                Text("No weekly readings yet.").font(.caption)
-                    .foregroundStyle(PopoverColor.secondaryForeground).padding(.vertical, 38)
-            } else {
-                ForecastChartView(series: mode == .history ? dashboard.historySeries : dashboard.projectionSeries,
-                    accessibilityLabel: mode == .history
-                        ? "Claude weekly remaining quota. Observed readings only. \(dashboard.historyCaption)"
-                        : "Claude weekly projection. Red dashed line is an estimate; gray is allowed pace. \(dashboard.explanation)",
-                    observedColor: PopoverColor.claudeAccent,
-                    displayDomain: mode == .history ? dashboard.historyDomain : dashboard.projectionDomain,
-                    onlyAvailableLegends: true, forecastDashed: true, forecastLabel: "Projected",
-                    markEstimatedAsObserved: false, evenlySpacedTimeTicks: true, insetPoints: true)
-                Text(mode == .history ? dashboard.historyCaption : "If this pace continues · until weekly reset")
-                    .font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
-            }
-        }.padding(.horizontal, 16).padding(.vertical, 10)
-            .background(PopoverColor.forecastSurface)
-    }
-
-    private var metricRows: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(model.rows.enumerated()), id: \.offset) { index, row in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(row.label).foregroundStyle(PopoverColor.secondaryForeground)
-                    Spacer(minLength: 4)
-                    Text(row.value).multilineTextAlignment(.trailing)
-                }.font(.system(size: 11.5, weight: .medium))
-                    .padding(.horizontal, 16).padding(.vertical, 7)
-                if index < model.rows.count - 1 { divider.padding(.leading, 16) }
-            }
-        }
+    private var windows: [QuotaStripView.Window] {
+        var result: [QuotaStripView.Window] = []
+        if let limit = registry.claudeSnapshot?.fiveHour { result.append(.init(title: "5 hours", limit: limit)) }
+        if let limit = registry.claudeSnapshot?.weekly { result.append(.init(title: "Weekly", limit: limit)) }
+        return result
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Claude Code /usage · every 5 min")
-                    if let date = registry.claudeSnapshot?.preferredLimit?.observedAt {
-                        Text("\(model.isStale ? "Saved" : "Read") \(date.formatted(date: .omitted, time: .standard))")
-                    }
-                }.font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
-                Spacer(minLength: 4)
-                Button("Folder…", action: chooseFolder).help("Choose a folder already trusted in Claude Code")
-                Button("Refresh") { Task { await registry.refreshClaude(force: true) } }
-                    .disabled(!registry.shouldRefreshClaude || registry.claudeIsRefreshing)
-            }.controlSize(.small)
-            Text("Login and folder trust stay in Claude Code.")
-                .font(.system(size: 9)).foregroundStyle(PopoverColor.secondaryForeground)
-        }.padding(.horizontal, 16).padding(.vertical, 9)
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Claude Code /usage · every 5 min")
+                if let date = registry.claudeSnapshot?.preferredLimit?.observedAt {
+                    Text("\(model.isStale ? "Saved" : "Read") \(date.formatted(date: .omitted, time: .standard))")
+                }
+            }.font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
+            Spacer(minLength: 4)
+            Button("Folder…", action: chooseFolder).help("Choose a folder already trusted in Claude Code. Login and trust stay in Claude Code.")
+            Button("Refresh") { Task { await registry.refreshClaude(force: true) } }
+                .disabled(!registry.shouldRefreshClaude || registry.claudeIsRefreshing)
+        }.controlSize(.small).padding(.horizontal, 16).padding(.vertical, 10)
     }
 
     private var divider: some View { Divider().overlay(PopoverColor.divider) }
@@ -150,6 +66,30 @@ struct ClaudeUsageView: View {
         if panel.runModal() == .OK, let path = panel.url?.path {
             UserDefaults.standard.set(path, forKey: "claudeProbeWorkingDirectory")
             Task { await registry.refreshClaude(force: true) }
+        }
+    }
+}
+
+struct OutlookMetricsView: View {
+    let rows: [PopoverMetric]
+    let explanation: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.label).foregroundStyle(PopoverColor.secondaryForeground)
+                    Spacer(minLength: 4)
+                    Text(row.value).multilineTextAlignment(.trailing)
+                }.font(.system(size: 11.5, weight: .medium))
+                    .padding(.horizontal, 16).padding(.vertical, 7)
+                if index < rows.count - 1 { Divider().overlay(PopoverColor.divider).padding(.leading, 16) }
+            }
+            Text(explanation).font(.system(size: 10.2, weight: .medium))
+                .foregroundStyle(PopoverColor.secondaryForeground)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.vertical, 9)
         }
     }
 }

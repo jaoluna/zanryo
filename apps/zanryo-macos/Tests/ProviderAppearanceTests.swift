@@ -51,17 +51,17 @@ final class ProviderAppearanceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let now = Date()
-        for state in ["gpt-weekly-long", "estimated", "flat-history", "flat-projection", "projection", "collecting", "stale", "unavailable"] {
+        for state in ["gpt-weekly-only", "gpt-weekly-long", "gpt-three-windows", "gpt-expired-spark", "gpt-stale", "estimated", "flat-overview", "flat-history", "flat-projection", "projection", "collecting", "stale", "unavailable"] {
             let snapshot = state.hasPrefix("flat") ? ClaudeDashboardFixture.flatSnapshot(now: now) : state == "unavailable" ? nil : ClaudeDashboardFixture.snapshot(
                 now: now, collecting: state == "collecting", stale: state == "stale")
             let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
             await registry.discover()
-            registry.select(state == "gpt-weekly-long" ? .openAI : .claude)
+            registry.select(state.hasPrefix("gpt") ? .openAI : .claude)
             registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
-            let store = ZanryoStore(provider: StyleDashboard(snapshot: state == "gpt-weekly-long" ? Self.longWeeklySnapshot(now: now) : nil))
-            if state == "gpt-weekly-long" { await store.start() }
+            let store = ZanryoStore(provider: StyleDashboard(snapshot: state.hasPrefix("gpt") ? Self.longWeeklySnapshot(now: now, state: state) : nil))
+            if state.hasPrefix("gpt") { await store.start() }
             let host = NSHostingView(rootView: PopoverView(store: store, registry: registry,
-                initialClaudeChartMode: state.contains("projection") ? .projection : .history))
+                initialClaudeChartMode: state.contains("projection") ? .projection : state.contains("history") ? .history : .overview))
             host.frame = NSRect(x: 0, y: 0, width: 390, height: 590)
             host.appearance = NSAppearance(named: .darkAqua)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -86,14 +86,18 @@ final class ProviderAppearanceTests: XCTestCase {
         }
     }
 
-    private static func longWeeklySnapshot(now: Date) -> DashboardSnapshot {
-        DashboardSnapshot(quota: .init(
+    private static func longWeeklySnapshot(now: Date, state: String) -> DashboardSnapshot {
+        let sparkDate = state == "gpt-expired-spark" ? now.addingTimeInterval(-8 * 86400) : now
+        return DashboardSnapshot(quota: .init(
             weekly: .init(kind: .weekly, limitId: "codex", remainingPercent: 74,
                           resetsAt: now.addingTimeInterval(518_100), observedAt: now),
-            spark: .init(kind: .fiveHour, limitId: "spark", remainingPercent: 19,
-                         resetsAt: now.addingTimeInterval(9_300), observedAt: now),
-            other: [], freshness: .fresh),
-            forecast: ClaudeDashboardFixture.snapshot(now: now).weeklyForecast!)
+            spark: state == "gpt-weekly-only" || state == "gpt-stale" ? nil : .init(kind: .spark, limitId: "spark", remainingPercent: 19,
+                         resetsAt: sparkDate.addingTimeInterval(9_300), observedAt: sparkDate),
+            other: [], freshness: state == "gpt-stale" ? .stale : .fresh,
+            fiveHour: state == "gpt-three-windows" ? .init(kind: .fiveHour, limitId: "codex_primary", remainingPercent: 43,
+                resetsAt: now.addingTimeInterval(9_300), observedAt: now) : nil),
+            forecast: ClaudeDashboardFixture.snapshot(now: now).weeklyForecast!,
+            account: .init(planType: .pro, observedAt: now))
     }
 }
 

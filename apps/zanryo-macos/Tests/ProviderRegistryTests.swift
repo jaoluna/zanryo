@@ -134,7 +134,7 @@ final class ProviderRegistryTests: XCTestCase {
     }
 
     private func makeSnapshot() -> DashboardSnapshot {
-        let now = Date(timeIntervalSince1970: 1_774_171_200)
+        let now = Date()
         let weekly = RateLimit(
             kind: .weekly,
             limitId: "codex",

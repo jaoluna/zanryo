@@ -12,6 +12,7 @@ struct ForecastChartView: View {
     var markEstimatedAsObserved = true
     var evenlySpacedTimeTicks = false
     var insetPoints = false
+    var projectionBoundary: Date? = nil
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -91,6 +92,11 @@ struct ForecastChartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Chart {
+                if let projectionBoundary {
+                    RuleMark(x: .value("Projection begins", projectionBoundary))
+                        .foregroundStyle(PopoverColor.secondaryForeground.opacity(0.35))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 4]))
+                }
                 ForEach(sustainable, id: \.at) { point in
                     LineMark(
                         x: .value("Time", point.at),

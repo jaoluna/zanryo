@@ -1,11 +1,10 @@
 import Foundation
 
-enum ClaudeChartMode: String, CaseIterable {
-    case history = "History"
-    case projection = "Projection"
-}
+typealias ClaudeChartMode = QuotaChartMode
 
-struct ClaudeDashboardModel {
+typealias ClaudeDashboardModel = WeeklyOutlookModel
+
+struct WeeklyOutlookModel {
     let series: [PopoverForecastPoint]
     let domain: ClosedRange<Date>?
     let pace: String
@@ -44,12 +43,15 @@ struct ClaudeDashboardModel {
 
     static func make(snapshot: ClaudeUsageSnapshot?, hasError: Bool, now: Date = Date()) -> Self {
         let stale = snapshot.map { $0.isStale(at: now) || hasError } ?? false
-        guard let weekly = snapshot?.weekly else {
+        return make(weekly: snapshot?.weekly, report: snapshot?.weeklyForecast, isStale: stale)
+    }
+
+    static func make(weekly: RateLimit?, report: ForecastReport?, isStale stale: Bool) -> Self {
+        guard let weekly else {
             return Self(series: [], domain: nil, pace: "Unavailable", rows: [],
-                        explanation: "Weekly history will appear when Claude provides its weekly limit.",
+                        explanation: "Weekly history will appear when the provider supplies its weekly limit.",
                         isStale: stale, hasProjection: false)
         }
-        let report = snapshot?.weeklyForecast
         // Older bridges can provide the current real reading without history.
         let saved = report?.chart.observed ?? []
         let observed = (saved.isEmpty ? [ChartPoint(at: weekly.observedAt, remainingPercent: weekly.remainingPercent)] : saved)

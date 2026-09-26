@@ -49,7 +49,7 @@ struct StatusPresentation: Equatable, Sendable {
             return StatusPresentation(modules: [])
         }
 
-        let limit = fiveHourLimit(in: snapshot.quota.other) ?? snapshot.quota.weekly
+        let limit = snapshot.quota.currentFiveHour(now: now) ?? snapshot.quota.weekly
         let reset = ResetDuration(from: now, to: limit.resetsAt)
         return StatusPresentation(
             modules: [
@@ -58,21 +58,10 @@ struct StatusPresentation: Equatable, Sendable {
                     remainingPercent: Int(limit.remainingPercent.rounded()),
                     reset: reset.menuBar,
                     resetSpoken: reset.spoken,
-                    isStale: isStaleOverride ?? (snapshot.quota.freshness == .stale)
+                    isStale: (isStaleOverride ?? false) || snapshot.quota.isStale(at: now)
                 )
             ]
         )
-    }
-
-    private static func fiveHourLimit(in other: [RateLimit]) -> RateLimit? {
-        other.first { limit in
-            let identifier = limit.limitId.lowercased()
-            return identifier.contains("five_hour")
-                || identifier.contains("five-hour")
-                || identifier.contains("fivehour")
-                || identifier.contains("5-hour")
-                || identifier.contains("5h")
-        }
     }
 
     static func claude(snapshot: ClaudeUsageSnapshot?, enabled: Bool, hasError: Bool, now: Date = Date()) -> StatusPresentation {
