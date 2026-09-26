@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  A lightweight, local-first Codex quota monitor for macOS and the command line.
+  A lightweight, local-first Codex and Claude quota monitor for macOS, with a Codex command-line interface.
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 ## What is Zanryo?
 
-Zanryo tracks how much Codex quota remains, records the current cycle locally, and estimates whether your usage pace will last until the next reset.
+Zanryo tracks how much Codex and Claude quota remains, records each current cycle locally, and estimates whether your usage pace will last until the next reset.
 
 Most quota indicators stop at a percentage. Zanryo also helps answer:
 
@@ -53,9 +53,10 @@ The native macOS menu bar keeps the important information visible without openin
 
 Open the popover for the complete view:
 
-- Weekly and Spark allowances with independent reset times;
-- a full-cycle forecast from 100% at cycle start to reset;
-- current usage pace per day and per five hours;
+- available five-hour, weekly and optional Spark allowances with independent reset times;
+- one chart with a discreet **5h / Weekly** filter when both windows are available;
+- real observations, a current-pace projection and a fixed 100%-to-0% cycle guide;
+- current usage pace in units appropriate to the selected window;
 - estimated depletion time;
 - projected quota remaining at reset;
 - allowed pace and forecast confidence;
@@ -68,9 +69,9 @@ Claude collection currently supports the observed CLI **2.1.282** screen format.
 
 Freshness is inferred from the supported CLI's refresh transition and completed display, not a server timestamp or an independent API receipt. An unrecognized CLI error or future screen change can require a collector update. Claude collection currently requires Unix terminal support; it fails closed on other platforms.
 
-The Claude pane includes its own weekly history chart, observed pace, estimated remaining quota at reset, allowed pace, and confidence. **History** shows orange observations over their recorded time span (minimum one hour), instead of compressing a few recent readings into an entire week. **Projection** is a separate view: dashed red is the estimated balance; dashed gray is a budget from the current estimate to zero at reset. It uses stored Claude weekly samples only, with no extra polling or model calls. A forecast requires at least three readings spanning 30 minutes in the current weekly cycle; until then, only real observations appear. Stale readings keep their history but hide projections. The five-hour quota and its reset remain independent. Unlike the legacy Codex chart, Claude's observed curve never inserts an assumed 100% reading at cycle start.
+Each provider has one chart. A small **5h / Weekly** filter appears when the source supplies both windows; it is not inferred from a subscription name. Weekly is the default. Selecting 5h shows only the current five-hour cycle, with hourly ticks and pace per hour; the observed data, projection and metrics change together. Reset cycles are never joined. Both views reuse stored observations without extra polling or model calls. A forecast requires at least three readings spanning 30 minutes in the selected cycle; until then, only real observations appear alongside the reference guide. Stale readings retain their history but hide projections. Neither provider invents a 100% observation at cycle start.
 
-Reset countdowns retain minutes in the panel and accessibility description. The menu bar uses compact units; weekly countdowns round **up** to hours with `≈` when approximate, rather than silently losing up to 59 minutes. Hover for the detailed countdown. Time updates once a minute even when a collector is throttled, without adding collection requests. Absolute reset dates use the Mac's local time zone.
+Reset countdowns retain minutes in the panel and accessibility description. The menu bar uses compact day and hour:minute notation, without an approximation prefix; hover for the detailed countdown. Time updates once a minute even when a collector is throttled, without adding collection requests. Absolute reset dates use the Mac's local time zone.
 
 ## Reading the forecast
 
@@ -82,11 +83,13 @@ unavailable, never a fabricated zero.
 
 The chart uses three clear lines:
 
-- **Yellow, Observed:** recorded quota remaining during the current cycle.
+- **Yellow (Codex) or terracotta (Claude), Observed:** recorded quota remaining during the current cycle.
 - **Red, Depletion:** the current-pace projection from the latest observation.
 - **Gray, Budget pace:** a linear reference from 100% at cycle start to 0% at reset.
 
 Forecasts are estimates. Zanryo reports low, medium, or high confidence according to the available history and avoids presenting certainty when the data does not support it.
+
+History is separated by provider and quota window, not by account identity. Switching accounts under the same provider can mix history; multi-account isolation is not implemented yet.
 
 ## Local and lightweight
 
