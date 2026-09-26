@@ -14,6 +14,7 @@ pub struct ClaudeUsageSnapshot {
     pub five_hour: Option<RateLimit>,
     pub weekly: Option<RateLimit>,
     pub weekly_forecast: Option<ForecastReport>,
+    pub five_hour_forecast: Option<ForecastReport>,
     pub freshness: Freshness,
 }
 
@@ -48,6 +49,7 @@ impl ClaudeUsageSnapshot {
                 .find(|limit| limit.kind == LimitKind::Weekly)
                 .cloned(),
             weekly_forecast: None,
+            five_hour_forecast: None,
             freshness,
         })
     }
@@ -59,6 +61,8 @@ impl ClaudeUsageSnapshot {
             let mut snapshot = Self::from_limits(limits, Freshness::Stale)?;
             snapshot.weekly_forecast =
                 forecast_from_history(history, snapshot.weekly.as_ref(), chrono::Utc::now())?;
+            snapshot.five_hour_forecast =
+                forecast_from_history(history, snapshot.five_hour.as_ref(), chrono::Utc::now())?;
             Ok(Some(snapshot))
         }
     }
@@ -67,6 +71,8 @@ impl ClaudeUsageSnapshot {
         history.insert_limits(&limits)?;
         snapshot.weekly_forecast =
             forecast_from_history(history, snapshot.weekly.as_ref(), chrono::Utc::now())?;
+        snapshot.five_hour_forecast =
+            forecast_from_history(history, snapshot.five_hour.as_ref(), chrono::Utc::now())?;
         Ok(snapshot)
     }
 }
@@ -80,8 +86,7 @@ fn forecast_from_history(
         return Ok(None);
     };
 
-    // Claude's weekly window is a distinct quota. Keep its exact provider and
-    // limit identity; never mix in the five-hour window or another weekly ID.
+    // Keep the selected window's exact provider and limit identity.
     let samples: Vec<_> = history
         .limits_since(
             ProviderId::Claude,
@@ -90,7 +95,7 @@ fn forecast_from_history(
         .into_iter()
         .filter(|sample| {
             sample.provider == ProviderId::Claude
-                && sample.kind == LimitKind::Weekly
+                && sample.kind == weekly.kind
                 && sample.limit_id == weekly.limit_id
         })
         .collect();
@@ -107,10 +112,13 @@ fn forecast_from_history(
             })
         })
         .collect();
-    let mut forecast = ForecastEngine::calculate(&cycle_samples, now);
+    let mut forecast = if weekly.kind == LimitKind::FiveHour {
+        ForecastEngine::calculate_five_hour(&cycle_samples, now)
+    } else {
+        ForecastEngine::calculate(&cycle_samples, now)
+    };
 
-    // The generic engine adds a synthetic 100% cycle-start point. The Claude
-    // observed history must contain recorded samples only.
+    // Defense in depth: observed history must contain recorded samples only.
     forecast.chart.observed.retain(|point| {
         cycle_samples.iter().any(|sample| {
             sample.observed_at == point.at
