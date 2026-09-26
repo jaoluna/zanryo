@@ -57,9 +57,13 @@ panel. This extends the selected dashboard direction, not a new brand concept.
   A single supplied window gets a full-width horizontal summary; two use equal
   columns. An optional Spark window is a compact extra row, never an empty column.
   Missing or expired optional limits are hidden; historical samples remain stored.
-- **Single weekly chart**, per João's final correction: no Overview, History or
-  Projection tabs. Show real observations, dashed forecast and a fixed gray
-  ideal-cycle guide, with a visible forecast boundary and confidence. The guide
+- **Single weekly chart**: no Overview, History or Projection tabs. João rejected
+  the redesigned graph and requested the original `6801b21` composition again.
+  Restore the `WEEKLY FORECAST` / two-line `CURRENT PACE` header, daily ticks,
+  continuous red depletion forecast, original plot geometry and compact legend.
+  Remove the vertical forecast boundary and added history/confidence caption.
+  Show real observations and the independent dashed gray budget/ideal guide.
+  The guide
   runs from 100% at reset minus seven days to 0% at reset, independently of the
   current balance or forecast availability. It is not observed usage. Stale data
   keeps the saved cycle guide/history but never a current projection.
@@ -76,6 +80,9 @@ panel. This extends the selected dashboard direction, not a new brand concept.
   No collector cadence, authentication, schema or billing inference changes.
 
 ## Personal-plan design study and next data layer, 2026-09-25
+
+Deferred by the graph-restoration request. These proposals are not an approved
+next implementation step; restore the original graph before revisiting improvements.
 
 The test-only `PlanDesignPreview` renders eight named personal-plan states:
 Codex Free, Go, Plus, Pro 5x/20x; Claude Pro, Max 5x/20x. All balances and
