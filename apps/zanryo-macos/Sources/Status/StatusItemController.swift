@@ -55,6 +55,7 @@ final class StatusItemController: NSObject {
         contentView.update(presentation)
         statusItem.length = contentView.intrinsicContentSize.width
         button?.setAccessibilityLabel(presentation.accessibilityLabel)
+        button?.toolTip = presentation.accessibilityLabel
     }
 
     func setHighlighted(_ isHighlighted: Bool) {

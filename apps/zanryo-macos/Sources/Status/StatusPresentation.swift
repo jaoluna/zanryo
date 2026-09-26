@@ -43,20 +43,20 @@ struct StatusPresentation: Equatable, Sendable {
         openAIEnabled: Bool = true,
         isStaleOverride: Bool? = nil,
         now: Date = Date(),
-        calendar: Calendar = .autoupdatingCurrent
+        calendar _: Calendar = .autoupdatingCurrent
     ) -> StatusPresentation {
         guard openAIEnabled, let snapshot else {
             return StatusPresentation(modules: [])
         }
 
         let limit = fiveHourLimit(in: snapshot.quota.other) ?? snapshot.quota.weekly
-        let reset = StatusResetDuration(from: now, to: limit.resetsAt, calendar: calendar)
+        let reset = ResetDuration(from: now, to: limit.resetsAt)
         return StatusPresentation(
             modules: [
                 ProviderModule(
                     provider: .openAI,
                     remainingPercent: Int(limit.remainingPercent.rounded()),
-                    reset: reset.compact,
+                    reset: reset.menuBar,
                     resetSpoken: reset.spoken,
                     isStale: isStaleOverride ?? (snapshot.quota.freshness == .stale)
                 )
@@ -77,43 +77,9 @@ struct StatusPresentation: Equatable, Sendable {
 
     static func claude(snapshot: ClaudeUsageSnapshot?, enabled: Bool, hasError: Bool, now: Date = Date()) -> StatusPresentation {
         guard enabled, let snapshot, let limit = snapshot.preferredLimit else { return StatusPresentation(modules: []) }
-        let reset = StatusResetDuration(from: now, to: limit.resetsAt, calendar: .autoupdatingCurrent)
+        let reset = ResetDuration(from: now, to: limit.resetsAt)
         return StatusPresentation(modules: [ProviderModule(provider: .claude,
-            remainingPercent: Int(limit.remainingPercent.rounded()), reset: reset.compact,
+            remainingPercent: Int(limit.remainingPercent.rounded()), reset: reset.menuBar,
             resetSpoken: reset.spoken, isStale: hasError || snapshot.isStale(at: now))])
-    }
-}
-
-private struct StatusResetDuration {
-    let days: Int
-    let hours: Int
-
-    init(from start: Date, to end: Date, calendar: Calendar) {
-        guard end > start else {
-            days = 0
-            hours = 0
-            return
-        }
-
-        let components = calendar.dateComponents([.day, .hour], from: start, to: end)
-        days = max(0, components.day ?? 0)
-        hours = max(0, components.hour ?? 0)
-    }
-
-    var compact: String {
-        if days == 0 {
-            return "\(hours)h"
-        }
-        return "\(days)d \(hours)h"
-    }
-
-    var spoken: String {
-        if days == 0 {
-            return hours == 1 ? "1 hour" : "\(hours) hours"
-        }
-
-        let dayUnit = days == 1 ? "day" : "days"
-        let hourUnit = hours == 1 ? "hour" : "hours"
-        return "\(days) \(dayUnit) and \(hours) \(hourUnit)"
     }
 }

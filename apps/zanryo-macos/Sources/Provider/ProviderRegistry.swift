@@ -151,12 +151,18 @@ final class ProviderRegistry: ObservableObject {
 
         shouldRefreshOpenAI = isEnabled(.openAI)
         shouldRefreshClaude = isEnabled(.claude)
+        refreshClock()
+    }
+
+    /// Tick countdowns even when collection is throttled or a provider is disabled.
+    func refreshClock(now: Date = Date()) {
         let openAI = StatusPresentation.make(
             snapshot: openAISnapshot,
             openAIEnabled: shouldRefreshOpenAI,
-            isStaleOverride: openAIError == nil ? nil : true
+            isStaleOverride: openAIError == nil ? nil : true,
+            now: now
         )
-        let claude = StatusPresentation.claude(snapshot: claudeSnapshot, enabled: shouldRefreshClaude, hasError: claudeError != nil)
+        let claude = StatusPresentation.claude(snapshot: claudeSnapshot, enabled: shouldRefreshClaude, hasError: claudeError != nil, now: now)
         statusPresentation = StatusPresentation(modules: openAI.modules + claude.modules)
     }
 }

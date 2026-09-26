@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc
     private func refreshTimerFired() {
+        registry?.refreshClock()
         if registry?.shouldRefreshClaude == true { Task { await claudeStore?.refresh() } }
         guard let store, registry?.shouldRefreshOpenAI == true else {
             return
