@@ -5,12 +5,10 @@ struct ResetDuration {
     let days: Int
     let hours: Int
     let minutes: Int
-    private let hasPartialHour: Bool
 
     init(from start: Date, to end: Date) {
         let seconds = max(0, end.timeIntervalSince(start))
         let totalMinutes = Int(ceil(seconds / 60))
-        hasPartialHour = seconds.truncatingRemainder(dividingBy: 3_600) > 0
         days = totalMinutes / 1_440
         hours = (totalMinutes % 1_440) / 60
         minutes = totalMinutes % 60
@@ -26,13 +24,11 @@ struct ResetDuration {
         units.map { "\($0.value)\($0.short)" }.joined(separator: " ")
     }
 
-    /// Menu space is scarce. Weekly resets round UP to hours and say so;
-    /// short windows retain minutes. Full precision stays in the popover/AX.
+    /// Compact days + HH:MM keeps minutes without an approximation mark or
+    /// rounding up an entire hour. The popover/AX spells the units out.
     var menuBar: String {
         guard days > 0 else { return compact.replacingOccurrences(of: " ", with: "") }
-        let roundedHours = days * 24 + hours + (minutes > 0 ? 1 : 0)
-        let remainder = roundedHours % 24
-        return (hasPartialHour ? "≈" : "") + "\(roundedHours / 24)d" + (remainder > 0 ? "\(remainder)h" : "")
+        return String(format: "%dd%02d:%02d", days, hours, minutes)
     }
 
     var spoken: String {

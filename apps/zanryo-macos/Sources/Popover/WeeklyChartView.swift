@@ -30,7 +30,7 @@ struct WeeklyChartTimeline {
         var parts = ["\(provider) weekly remaining quota."]
         if kinds.contains(.observed) { parts += [historyCaption, "Solid line: observed."] }
         if kinds.contains(.forecast) { parts.append("Red dashed line: estimated, not guaranteed.") }
-        if kinds.contains(.sustainable) { parts.append("Gray dashed line: allowed pace.") }
+        if kinds.contains(.sustainable) { parts.append("Gray dashed line: fixed ideal cycle, 100 percent at cycle start to zero at reset, not observed usage.") }
         if series.isEmpty { parts.append("No data available.") }
         return parts.joined(separator: " ")
     }

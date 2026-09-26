@@ -12,7 +12,7 @@ final class StatusPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.modules.count, 1)
         XCTAssertEqual(presentation.modules[0].provider, .openAI)
-        XCTAssertEqual(presentation.modules[0].text, "15% · 5d3h")
+        XCTAssertEqual(presentation.modules[0].text, "15% · 5d03:00")
         XCTAssertFalse(presentation.dragonOnly)
         XCTAssertEqual(
             presentation.accessibilityLabel,
@@ -51,7 +51,7 @@ final class StatusPresentationTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(presentation.modules[0].text, "15% · 5d3h ·")
+        XCTAssertEqual(presentation.modules[0].text, "15% · 5d03:00 ·")
         XCTAssertEqual(
             presentation.accessibilityLabel,
             "OpenAI has 15 percent remaining. Resets in 5 days and 3 hours. Data may be outdated."
@@ -90,7 +90,7 @@ final class StatusPresentationTests: XCTestCase {
         for remaining in [100.0, 75.0, 0.0] {
             let snapshot = makeSnapshot(remaining: remaining, freshness: .fresh)
             let presentation = StatusPresentation.make(snapshot: snapshot, now: now)
-            XCTAssertEqual(presentation.modules.first?.text, "\(Int(remaining))% · 5d3h")
+            XCTAssertEqual(presentation.modules.first?.text, "\(Int(remaining))% · 5d03:00")
             XCTAssertEqual(snapshot.quota.weekly.remainingPercent, remaining)
         }
     }

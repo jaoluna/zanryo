@@ -39,7 +39,7 @@ final class QuotaDashboardPolishTests: XCTestCase {
         let snapshot = ClaudeDashboardFixture.flatSnapshot(now: now)
         let model = WeeklyOutlookModel.make(snapshot: snapshot, hasError: false, now: now)
         let timeline = WeeklyChartTimeline(series: model.series, reset: snapshot.weekly?.resetsAt)
-        XCTAssertEqual(timeline.domain, now.addingTimeInterval(-3600)...snapshot.weekly!.resetsAt)
+        XCTAssertEqual(timeline.domain, snapshot.weekly!.resetsAt.addingTimeInterval(-7 * 86400)...snapshot.weekly!.resetsAt)
         XCTAssertEqual(Set(timeline.series.map(\.kind)), [.observed, .forecast, .sustainable])
         XCTAssertFalse(timeline.observed.isEmpty)
         XCTAssertTrue(timeline.observed.allSatisfy { $0.remainingPercent == 97 })
@@ -56,7 +56,8 @@ final class QuotaDashboardPolishTests: XCTestCase {
         XCTAssertEqual(codex.rows, claude.rows)
         let stale = WeeklyOutlookModel.make(weekly: snapshot.weekly, report: snapshot.weeklyForecast, isStale: true)
         XCTAssertFalse(stale.hasProjection)
-        XCTAssertTrue(stale.series.allSatisfy { $0.kind == .observed })
+        XCTAssertFalse(stale.series.contains { $0.kind == .forecast })
+        XCTAssertEqual(stale.series.filter { $0.kind == .sustainable }, codex.series.filter { $0.kind == .sustainable })
     }
 
     func testOpenAIAgeExpiryAndClockSkewCannotRemainFreshInMenu() {
@@ -79,12 +80,13 @@ final class QuotaDashboardPolishTests: XCTestCase {
             XCTAssertTrue(label.contains("\(provider) weekly remaining quota."))
             XCTAssertTrue(label.contains("Solid line: observed."))
             XCTAssertTrue(label.contains("estimated, not guaranteed"))
-            XCTAssertTrue(label.contains("allowed pace"))
+            XCTAssertTrue(label.contains("fixed ideal cycle"))
+            XCTAssertTrue(label.contains("not observed usage"))
             let saved = WeeklyChartTimeline(series: timeline.observed, reset: snapshot.weekly?.resetsAt)
             let savedLabel = saved.accessibilityLabel(provider: provider)
             XCTAssertTrue(savedLabel.contains("observed"))
             XCTAssertFalse(savedLabel.contains("estimated"))
-            XCTAssertFalse(savedLabel.contains("allowed pace"))
+            XCTAssertFalse(savedLabel.contains("ideal cycle"))
             XCTAssertNil(saved.boundary)
             XCTAssertEqual(saved.domain, now.addingTimeInterval(-3600)...now)
         }

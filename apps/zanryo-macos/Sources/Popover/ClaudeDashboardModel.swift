@@ -14,8 +14,8 @@ struct WeeklyOutlookModel {
     var historySeries: [PopoverForecastPoint] { series.filter { $0.kind == .observed } }
 
     var projectionSeries: [PopoverForecastPoint] {
-        // Don't carry a week of past observations into a forward-looking chart.
-        series.filter { $0.kind != .observed }
+        // The independent cycle guide is not a forecast.
+        series.filter { $0.kind == .forecast }
     }
 
     var historyDomain: ClosedRange<Date>? {
@@ -64,17 +64,15 @@ struct WeeklyOutlookModel {
                 PopoverForecastPoint(kind: .forecast, at: $0.at, remainingPercent: $0.remainingPercent,
                                      lowUncertainty: $0.uncertainty.low, highUncertainty: $0.uncertainty.high)
             }
-            // Allowed pace is a budget from the current estimate, not an invented
-            // 100% balance at the start of a partially observed cycle.
-            if let current = chart.forecast.first, current.at < weekly.resetsAt {
-                series += [
-                    PopoverForecastPoint(kind: .sustainable, at: current.at, remainingPercent: current.remainingPercent,
-                                         lowUncertainty: nil, highUncertainty: nil),
-                    PopoverForecastPoint(kind: .sustainable, at: weekly.resetsAt, remainingPercent: 0,
-                                         lowUncertainty: nil, highUncertainty: nil),
-                ]
-            }
         }
+        // Fixed reference, NOT a reading or prediction. It never follows the
+        // current balance and remains meaningful without sufficient history.
+        series += [
+            PopoverForecastPoint(kind: .sustainable, at: weekly.resetsAt.addingTimeInterval(-7 * 86400),
+                                 remainingPercent: 100, lowUncertainty: nil, highUncertainty: nil),
+            PopoverForecastPoint(kind: .sustainable, at: weekly.resetsAt, remainingPercent: 0,
+                                 lowUncertainty: nil, highUncertainty: nil),
+        ]
         let pending = stale ? "Refresh needed" : "Collecting history"
         let pace = estimated ? rate(report?.consumedPerDay) : pending
         let depletion: String
@@ -90,7 +88,7 @@ struct WeeklyOutlookModel {
         let rows = [
             PopoverMetric(label: "Estimated depletion", value: depletion),
             PopoverMetric(label: "At weekly reset", value: projected.map { String(format: "%.1f%% remaining", $0) } ?? pending),
-            PopoverMetric(label: "Allowed pace", value: estimated ? rate(report?.sustainablePerDay) : pending),
+            PopoverMetric(label: "Available per day", value: estimated ? rate(report?.sustainablePerDay) : pending),
             // The chart compresses flat stretches; chart points are not a sample count.
             PopoverMetric(label: "Confidence", value: confidence),
         ]
@@ -98,7 +96,7 @@ struct WeeklyOutlookModel {
             ? "Saved observations. Refresh to update the estimate."
             : estimated
                 ? "Projection assumes the recorded pace continues. \(report?.confidence == .low ? "Low confidence: limited history." : "It is not a guaranteed balance.")"
-                : "Observed readings only. Forecast needs at least 3 readings spanning 30 minutes in this weekly cycle."
+                : "Forecast needs 3 readings spanning 30 minutes. The gray line is the ideal cycle, not recorded usage."
         return Self(series: series, domain: weekly.resetsAt.addingTimeInterval(-7 * 86400)...weekly.resetsAt,
                     pace: pace, rows: rows, explanation: explanation, isStale: stale, hasProjection: estimated)
     }

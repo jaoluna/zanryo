@@ -102,7 +102,7 @@ struct ForecastChartView: View {
                         x: .value("Time", point.at),
                         y: .value("Remaining", point.remainingPercent)
                     )
-                    .foregroundStyle(by: .value("Series", "Budget pace"))
+                    .foregroundStyle(by: .value("Series", "Ideal cycle"))
                     .interpolationMethod(.linear)
                     .lineStyle(
                         StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round, dash: [4, 5])
@@ -166,7 +166,7 @@ struct ForecastChartView: View {
             .chartForegroundStyleScale([
                 "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
-                "Budget pace": PopoverColor.chartLuna
+                "Ideal cycle": PopoverColor.chartLuna
             ])
             .chartLegend(.hidden)
             .chartXAxis {
@@ -218,7 +218,7 @@ struct ForecastChartView: View {
                     legendItem(forecastLabel, color: PopoverColor.chartDepletion, dashed: forecastDashed)
                 }
                 if !onlyAvailableLegends || !sustainable.isEmpty {
-                    legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
+                    legendItem("Ideal cycle", color: PopoverColor.chartLuna, dashed: true)
                 }
             }
         }
