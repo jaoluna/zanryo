@@ -110,7 +110,8 @@ final class StatusItemContentView: NSView {
 
         let glyph = NSImageView()
         glyph.image = Self.glyphImage(named: module.provider.statusGlyph)
-        glyph.contentTintColor = .labelColor
+        glyph.contentTintColor = module.provider == .claude
+            ? ProviderAppearance.claudeMenuAccent : .labelColor
         glyph.imageScaling = .scaleProportionallyDown
         glyph.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -123,8 +124,8 @@ final class StatusItemContentView: NSView {
         let label = NSTextField(labelWithString: module.text)
         label.font = .monospacedDigitSystemFont(ofSize: 12.25, weight: .semibold)
         label.textColor = module.provider == .openAI
-            ? NSColor(srgbRed: 0xF2 / 255, green: 0xB6 / 255, blue: 0x32 / 255, alpha: 1)
-            : .labelColor
+            ? ProviderAppearance.codexAccent
+            : ProviderAppearance.claudeMenuAccent
         label.lineBreakMode = .byClipping
         label.setAccessibilityElement(false)
         stack.addArrangedSubview(label)

@@ -2,6 +2,7 @@
 .superpowers/
 .worktrees/
 target/
+.build/
 .env
 .env.*
 !.env.example

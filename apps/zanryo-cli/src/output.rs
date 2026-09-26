@@ -102,7 +102,7 @@ fn format_duration(duration: chrono::Duration) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_forecast, format_snapshot};
+    use super::{format_forecast, format_history, format_snapshot};
     use chrono::{Duration, TimeZone, Utc};
     use zanryo_core::{
         ChartSeries, ForecastConfidence, ForecastRange, ForecastReport, ForecastStatus, Freshness,
@@ -138,6 +138,30 @@ mod tests {
             format_snapshot(&snapshot, now),
             "Weekly 15% left · reset in 5d 3h\nSpark 72% left · reset in 6d"
         );
+    }
+
+    #[test]
+    fn remaining_scale_preserves_history_and_provider_boundaries() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 25, 20, 0, 0).unwrap();
+        for provider in [ProviderId::OpenAi, ProviderId::Claude] {
+            for remaining in [100.0, 75.0, 0.0] {
+                let limit = RateLimit::new(
+                    provider,
+                    LimitKind::Weekly,
+                    "weekly",
+                    remaining,
+                    now + Duration::days(7),
+                    now,
+                )
+                .unwrap();
+                assert!(
+                    format_history(std::slice::from_ref(&limit))
+                        .ends_with(&format!("{remaining}% left"))
+                );
+                assert_eq!(limit.remaining_percent, remaining);
+                assert_eq!(limit.provider, provider);
+            }
+        }
     }
 
     #[test]

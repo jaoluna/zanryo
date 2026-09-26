@@ -96,6 +96,50 @@ fn sample_limits() -> Vec<RateLimit> {
     ]
 }
 
+#[tokio::test]
+async fn fresh_dashboard_reports_five_hour_pace_separately_without_extra_collection() {
+    let directory = tempdir().unwrap();
+    let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
+    let now = Utc::now();
+    let reset = now + Duration::hours(2);
+    let five: Vec<_> = (0..3)
+        .map(|i| {
+            RateLimit::new(
+                ProviderId::OpenAi,
+                LimitKind::FiveHour,
+                "primary",
+                80.0 - f64::from(i) * 10.0,
+                reset,
+                now - Duration::minutes(60 - i64::from(i) * 30),
+            )
+            .unwrap()
+        })
+        .collect();
+    history.insert_limits(&five[..2]).unwrap();
+    let weekly = RateLimit::new(
+        ProviderId::OpenAi,
+        LimitKind::Weekly,
+        "codex",
+        21.0,
+        now + Duration::days(3),
+        now,
+    )
+    .unwrap();
+    let source = FakeSource::succeeding(vec![weekly, five[2].clone()]);
+    let reads = source.reads.clone();
+    let service = QuotaService::new(ProviderId::OpenAi, source, history);
+    let snapshot = service
+        .refresh_dashboard(now - Duration::seconds(1))
+        .await
+        .unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    assert_eq!(snapshot.forecast.chart.observed[0].remaining_percent, 21.0);
+    let short = snapshot.five_hour_forecast.unwrap();
+    assert_eq!(short.chart.observed.last().unwrap().remaining_percent, 60.0);
+    assert_eq!(short.chart.observed.last().unwrap().at, now);
+    assert!((short.consumed_per_day.unwrap() / 24.0 - 20.0).abs() < 0.001);
+}
+
 fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 7, 20, hour, minute, 0).unwrap()
 }

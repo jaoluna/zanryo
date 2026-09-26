@@ -1,6 +1,15 @@
+import AppKit
 import XCTest
+@testable import Zanryo
 
 final class AppEntrypointTests: XCTestCase {
+    @MainActor
+    func testHostedLaunchDoesNotStartCollectorsOrOpenDefaultDatabase() {
+        let delegate = AppDelegate()
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        XCTAssertFalse(delegate.hasStartedCollectors)
+    }
+
     func testAppUsesExplicitAppKitEntrypoint() throws {
         let macOSAppDirectory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

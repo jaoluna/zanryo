@@ -25,6 +25,11 @@ final class ProviderRegistry: ObservableObject {
     @Published private(set) var selectedProvider: ProviderId?
     @Published private(set) var statusPresentation = StatusPresentation(modules: [])
     @Published private(set) var shouldRefreshOpenAI = false
+    @Published private(set) var shouldRefreshClaude = false
+    @Published private(set) var claudeSnapshot: ClaudeUsageSnapshot?
+    @Published private(set) var claudeError: DisplayError?
+    @Published private(set) var claudeIsRefreshing = false
+    var onClaudeRefresh: (@MainActor (_ force: Bool) async -> Void)?
 
     private let discoverer: any ProviderDiscovering
     private let preferences: ProviderPreferences
@@ -110,7 +115,7 @@ final class ProviderRegistry: ObservableObject {
                 provider: provider,
                 executablePath: installation?.executablePath,
                 isEnabled: enabled,
-                availability: .unavailable
+                availability: !enabled ? .unavailable : claudeError != nil ? .error : claudeSnapshot != nil ? .available : .unavailable
             )
         }
     }
@@ -123,6 +128,18 @@ final class ProviderRegistry: ObservableObject {
         reconcile()
     }
 
+    func updateClaude(snapshot: ClaudeUsageSnapshot?, error: DisplayError?, isRefreshing: Bool) {
+        if let snapshot { claudeSnapshot = snapshot }
+        claudeError = error
+        claudeIsRefreshing = isRefreshing
+        reconcile()
+    }
+
+    func refreshClaude(force: Bool = false) async {
+        guard shouldRefreshClaude else { return }
+        await onClaudeRefresh?(force)
+    }
+
     private func reconcile() {
         installedProviders = ProviderId.allCases.filter { installations[$0] != nil }
 
@@ -133,10 +150,19 @@ final class ProviderRegistry: ObservableObject {
         }
 
         shouldRefreshOpenAI = isEnabled(.openAI)
-        statusPresentation = StatusPresentation.make(
+        shouldRefreshClaude = isEnabled(.claude)
+        refreshClock()
+    }
+
+    /// Tick countdowns even when collection is throttled or a provider is disabled.
+    func refreshClock(now: Date = Date()) {
+        let openAI = StatusPresentation.make(
             snapshot: openAISnapshot,
             openAIEnabled: shouldRefreshOpenAI,
-            isStaleOverride: openAIError == nil ? nil : true
+            isStaleOverride: openAIError == nil ? nil : true,
+            now: now
         )
+        let claude = StatusPresentation.claude(snapshot: claudeSnapshot, enabled: shouldRefreshClaude, hasError: claudeError != nil, now: now)
+        statusPresentation = StatusPresentation(modules: openAI.modules + claude.modules)
     }
 }

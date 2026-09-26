@@ -1,6 +1,7 @@
 import Foundation
 
 enum LimitKind: String, Decodable, Sendable {
+    case fiveHour = "five_hour"
     case weekly
     case spark
     case other
@@ -72,6 +73,36 @@ struct QuotaSnapshot: Decodable, Equatable, Sendable {
     let spark: RateLimit?
     let other: [RateLimit]
     let freshness: Freshness
+    let fiveHour: RateLimit?
+
+    init(weekly: RateLimit, spark: RateLimit?, other: [RateLimit], freshness: Freshness, fiveHour: RateLimit? = nil) {
+        self.weekly = weekly
+        self.spark = spark
+        self.other = other
+        self.freshness = freshness
+        self.fiveHour = fiveHour
+    }
+
+    /// Cached optional windows must belong to the latest observation, not a
+    /// different collection that happened days ago. Never delete their history.
+    func currentOptional(_ limit: RateLimit?, now: Date) -> RateLimit? {
+        guard let limit, limit.resetsAt > now,
+              abs(limit.observedAt.timeIntervalSince(weekly.observedAt)) <= 60 else { return nil }
+        return limit
+    }
+
+    func currentFiveHour(now: Date) -> RateLimit? {
+        let legacy = other.first {
+            let id = $0.limitId.lowercased()
+            return $0.kind == .fiveHour || ["five_hour", "five-hour", "fivehour", "5-hour", "5h"].contains { id.contains($0) }
+        }
+        return currentOptional(fiveHour ?? legacy, now: now)
+    }
+
+    func isStale(at now: Date = Date()) -> Bool {
+        freshness == .stale || now.timeIntervalSince(weekly.observedAt) > 360
+            || weekly.observedAt > now || weekly.resetsAt <= now
+    }
 }
 
 enum ForecastStatus: String, Decodable, Sendable {
@@ -123,14 +154,17 @@ struct DashboardSnapshot: Decodable, Equatable, Sendable {
     let quota: QuotaSnapshot
     let forecast: ForecastReport
     let account: AccountContext?
+    let fiveHourForecast: ForecastReport?
 
     init(
         quota: QuotaSnapshot,
         forecast: ForecastReport,
-        account: AccountContext? = nil
+        account: AccountContext? = nil,
+        fiveHourForecast: ForecastReport? = nil
     ) {
         self.quota = quota
         self.forecast = forecast
         self.account = account
+        self.fiveHourForecast = fiveHourForecast
     }
 }

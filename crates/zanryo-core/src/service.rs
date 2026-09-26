@@ -109,9 +109,34 @@ where
                 .unwrap_or_else(|| AccountContext::unknown(self.provider))
         };
         let forecast = self.forecast(now).await?;
+        let five_hour_forecast = if let Some(limit) = &quota.five_hour {
+            // A fresh observation is stamped locally after the RPC, while the
+            // caller's clock was captured before it. Include that real sample
+            // without advancing stale snapshots or trusting later history.
+            let forecast_now = if quota.freshness == Freshness::Fresh {
+                now.max(limit.observed_at)
+            } else {
+                now
+            };
+            let history = self.history.clone();
+            let provider = self.provider;
+            let id = limit.limit_id.clone();
+            let samples = run_history_task(move || {
+                history.limits_since(provider, forecast_now - Duration::hours(6))
+            })
+            .await?;
+            let matching: Vec<_> = samples
+                .into_iter()
+                .filter(|sample| sample.limit_id == id)
+                .collect();
+            Some(ForecastEngine::calculate_five_hour(&matching, forecast_now))
+        } else {
+            None
+        };
         Ok(DashboardSnapshot {
             quota,
             forecast,
+            five_hour_forecast,
             account,
         })
     }

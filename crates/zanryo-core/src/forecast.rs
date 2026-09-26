@@ -71,6 +71,18 @@ pub struct ForecastEngine;
 
 impl ForecastEngine {
     pub fn calculate(samples: &[RateLimit], now: DateTime<Utc>) -> ForecastReport {
+        Self::calculate_window(samples, now, LimitKind::Weekly)
+    }
+
+    pub fn calculate_five_hour(samples: &[RateLimit], now: DateTime<Utc>) -> ForecastReport {
+        Self::calculate_window(samples, now, LimitKind::FiveHour)
+    }
+
+    fn calculate_window(
+        samples: &[RateLimit],
+        now: DateTime<Utc>,
+        kind: LimitKind,
+    ) -> ForecastReport {
         if samples.first().is_some_and(|first| {
             samples
                 .iter()
@@ -79,10 +91,12 @@ impl ForecastEngine {
             return collecting_report(Vec::new());
         }
 
-        let cycle = current_weekly_cycle(samples);
+        let cycle = current_cycle(samples, kind, now);
         let cleaned = remove_discontinuities(cycle);
 
-        if !has_minimum_history(&cleaned) {
+        if !has_minimum_history(&cleaned)
+            || cleaned.last().is_some_and(|sample| sample.resets_at <= now)
+        {
             return collecting_report(observed_points(&cleaned));
         }
 
@@ -198,10 +212,11 @@ fn collecting_report(observed: Vec<ChartPoint>) -> ForecastReport {
     }
 }
 
-fn current_weekly_cycle(samples: &[RateLimit]) -> Vec<&RateLimit> {
+fn current_cycle(samples: &[RateLimit], kind: LimitKind, now: DateTime<Utc>) -> Vec<&RateLimit> {
     let Some(latest) = samples
         .iter()
-        .filter(|sample| sample.kind == LimitKind::Weekly)
+        .filter(|sample| sample.kind == kind)
+        .filter(|sample| kind != LimitKind::FiveHour || sample.observed_at <= now)
         .max_by_key(|sample| sample.observed_at)
     else {
         return Vec::new();
@@ -209,8 +224,15 @@ fn current_weekly_cycle(samples: &[RateLimit]) -> Vec<&RateLimit> {
 
     let mut cycle: Vec<_> = samples
         .iter()
-        .filter(|sample| sample.kind == LimitKind::Weekly)
+        .filter(|sample| sample.kind == kind)
+        .filter(|sample| kind != LimitKind::FiveHour || sample.observed_at <= now)
         .filter(|sample| (sample.resets_at - latest.resets_at).num_seconds().abs() <= 5 * 60)
+        .filter(|sample| {
+            kind != LimitKind::FiveHour
+                || (sample.limit_id == latest.limit_id
+                    && sample.observed_at >= latest.resets_at - chrono::Duration::hours(5)
+                    && sample.observed_at < latest.resets_at)
+        })
         .collect();
     cycle.sort_by_key(|sample| sample.observed_at);
     cycle
@@ -308,10 +330,8 @@ fn chart_observed_points(samples: &[&RateLimit], budget_start: DateTime<Utc>) ->
         .filter(|sample| sample.observed_at >= budget_start)
         .collect();
 
-    let mut points = vec![ChartPoint {
-        at: budget_start,
-        remaining_percent: 100.0,
-    }];
+    // Budget is a reference; observed history must contain real readings only.
+    let mut points = Vec::new();
 
     let Some(first) = visible_samples.first() else {
         return points;
@@ -369,7 +389,15 @@ fn build_chart(
     rate: f64,
     rate_range: &ForecastRange,
 ) -> ChartSeries {
-    let budget_start = reset - chrono::Duration::days(WEEKLY_CYCLE_DAYS);
+    let budget_start = reset
+        - if samples
+            .last()
+            .is_some_and(|sample| sample.kind == LimitKind::FiveHour)
+        {
+            chrono::Duration::hours(5)
+        } else {
+            chrono::Duration::days(WEEKLY_CYCLE_DAYS)
+        };
     let forecast_end = forecast_end(now, reset, current_remaining_percent, rate);
     let observed = chart_observed_points(samples, budget_start);
     let forecast = projection_times(now, forecast_end)

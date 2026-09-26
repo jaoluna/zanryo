@@ -4,6 +4,48 @@ import XCTest
 
 @MainActor
 final class ProviderRegistryTests: XCTestCase {
+    func testClockUpdatesClaudeCountdownWithoutCollectionWithOpenAIDisabled() async {
+        let source = ProviderDiscoveryStub([.init(provider: .claude, executablePath: "/fixture/claude")])
+        let registry = ProviderRegistry(discoverer: source, preferences: ProviderPreferences(defaults: makeDefaults()))
+        await registry.discover()
+        let now = Date()
+        let snapshot = ClaudeDashboardFixture.snapshot(now: now)
+        registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
+        registry.refreshClock(now: now)
+        XCTAssertEqual(registry.statusPresentation.modules.first?.reset, "3h")
+        registry.refreshClock(now: now.addingTimeInterval(60))
+        XCTAssertEqual(registry.statusPresentation.modules.first?.reset, "2h59m")
+        XCTAssertEqual(registry.claudeSnapshot, snapshot)
+        XCTAssertFalse(registry.claudeIsRefreshing)
+        XCTAssertFalse(registry.shouldRefreshOpenAI)
+    }
+
+    func testClaudeStateNeverReplacesOpenAIAndDisabledProviderCannotRefresh() async {
+        let source = ProviderDiscoveryStub([
+            ProviderInstallation(provider:.openAI,executablePath:"/codex"),
+            ProviderInstallation(provider:.claude,executablePath:"/claude")
+        ])
+        let registry = ProviderRegistry(discoverer:source,preferences:ProviderPreferences(defaults:makeDefaults()))
+        await registry.discover()
+        registry.updateOpenAI(snapshot:makeSnapshot(),error:nil)
+        let now = Date()
+        let quota = ClaudeUsageSnapshot(provider:.claude,fiveHour:RateLimit(kind:.fiveHour,limitId:"claude_five_hour",remainingPercent:66,resetsAt:now.addingTimeInterval(3600),observedAt:now),weekly:nil,freshness:.fresh)
+        registry.updateClaude(snapshot:quota,error:nil,isRefreshing:false)
+        XCTAssertEqual(registry.statusPresentation.modules.map(\.remainingPercent),[40,66])
+        registry.updateClaude(snapshot:nil,error:DisplayError(code:"offline",message:"Offline"),isRefreshing:false)
+        XCTAssertFalse(registry.statusPresentation.modules[0].isStale)
+        XCTAssertTrue(registry.statusPresentation.modules[1].isStale)
+        registry.setEnabled(false,for:.openAI)
+        XCTAssertEqual(registry.statusPresentation.modules.map(\.provider),[.claude])
+        var requests = 0
+        registry.onClaudeRefresh = { _ in requests += 1 }
+        await registry.refreshClaude(force:true)
+        XCTAssertEqual(requests,1)
+        registry.setEnabled(false,for:.claude)
+        await registry.refreshClaude(force:true)
+        XCTAssertEqual(requests,1)
+        XCTAssertTrue(registry.statusPresentation.dragonOnly)
+    }
     func testDiscoveryOrdersProvidersAndOpenAIQuotaDrivesOnlyItsModule() async {
         let defaults = makeDefaults()
         let source = ProviderDiscoveryStub([
@@ -92,7 +134,7 @@ final class ProviderRegistryTests: XCTestCase {
     }
 
     private func makeSnapshot() -> DashboardSnapshot {
-        let now = Date(timeIntervalSince1970: 1_774_171_200)
+        let now = Date()
         let weekly = RateLimit(
             kind: .weekly,
             limitId: "codex",

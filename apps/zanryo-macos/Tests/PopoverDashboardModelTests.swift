@@ -274,6 +274,26 @@ final class PopoverDashboardModelTests: XCTestCase {
         XCTAssertEqual(model.forecastMetrics[safe: 1]?.value, "12%/day · 2.5%/5h")
     }
 
+    func testChartPreservesRemainingScaleAndUncertainty() {
+        let dashboard = makeForecastSnapshot(observedPoint: 84, forecastPoint: 72, sustainablePoint: 70)
+        let model = PopoverDashboardModel.make(from: dashboard, now: now)
+        XCTAssertEqual(model.forecastSeries.map(\.remainingPercent), [84, 72, 70])
+        let forecast = model.forecastSeries.first { $0.kind == .forecast }
+        XCTAssertEqual(forecast?.lowUncertainty, 70)
+        XCTAssertEqual(forecast?.highUncertainty, 74)
+        XCTAssertEqual(dashboard.forecast.chart.observed.first?.remainingPercent, 84)
+    }
+
+    func testChartResetAndExhaustionUseOneHundredAndZero() {
+        let model = PopoverDashboardModel.make(
+            from: makeForecastSnapshot(observedPoint: 100, forecastPoint: 0, sustainablePoint: -2),
+            now: now
+        )
+        XCTAssertEqual(model.forecastSeries.map(\.remainingPercent), [100, 0, 0])
+        XCTAssertEqual(model.forecastSeries[1].lowUncertainty, 0)
+        XCTAssertEqual(model.forecastSeries[1].highUncertainty, 2)
+    }
+
     private func makeForecastSnapshot(
         status: ForecastStatus = .estimated,
         consumed: Double? = 15,

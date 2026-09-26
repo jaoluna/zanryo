@@ -9,7 +9,7 @@ protocol ProviderDiscovering: Sendable {
     func discoverProviders() async throws -> [ProviderInstallation]
 }
 
-actor RustBridge: DashboardProviding, ProviderDiscovering {
+actor RustBridge: DashboardProviding, ProviderDiscovering, ClaudeUsageProviding {
     private final class Handle: @unchecked Sendable {
         let pointer: OpaquePointer
 
@@ -51,6 +51,29 @@ actor RustBridge: DashboardProviding, ProviderDiscovering {
         try await Task.detached(priority: .utility) {
             let data = try Self.copyJSON(from: zanryo_provider_discovery_json())
             return try BridgeDecoder.decodeInstallations(from: data)
+        }.value
+    }
+
+    func cachedClaude() async throws -> ClaudeUsageSnapshot? {
+        let handle = handle
+        return try await Task.detached(priority: .utility) {
+            let data = try Self.copyJSON(from: zanryo_claude_cached_json(handle.pointer))
+            return try BridgeDecoder.decodeClaudeUsage(from: data)
+        }.value
+    }
+
+    func refreshClaude() async throws -> ClaudeUsageSnapshot {
+        guard let directory = UserDefaults.standard.string(forKey: "claudeProbeWorkingDirectory"),
+              directory.hasPrefix("/") else {
+            throw DisplayError(code: "claude_directory", message: "Choose a folder already trusted in Claude Code.")
+        }
+        let handle = handle
+        return try await Task.detached(priority: .utility) {
+            let data = try directory.withCString { path in
+                try Self.copyJSON(from: zanryo_claude_refresh_json(handle.pointer, path))
+            }
+            guard let result = try BridgeDecoder.decodeClaudeUsage(from: data) else { throw BridgeDecodeError.missingData }
+            return result
         }.value
     }
 

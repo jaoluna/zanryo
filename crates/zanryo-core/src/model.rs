@@ -125,7 +125,7 @@ pub enum Freshness {
 pub struct QuotaSnapshot {
     #[serde(skip_serializing, default = "legacy_dashboard_provider")]
     pub provider: ProviderId,
-    #[serde(skip_serializing, default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub five_hour: Option<RateLimit>,
     pub weekly: RateLimit,
     pub spark: Option<RateLimit>,

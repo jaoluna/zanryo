@@ -43,69 +43,33 @@ struct StatusPresentation: Equatable, Sendable {
         openAIEnabled: Bool = true,
         isStaleOverride: Bool? = nil,
         now: Date = Date(),
-        calendar: Calendar = .autoupdatingCurrent
+        calendar _: Calendar = .autoupdatingCurrent
     ) -> StatusPresentation {
         guard openAIEnabled, let snapshot else {
             return StatusPresentation(modules: [])
         }
 
-        let limit = fiveHourLimit(in: snapshot.quota.other) ?? snapshot.quota.weekly
-        let reset = StatusResetDuration(from: now, to: limit.resetsAt, calendar: calendar)
+        let limit = snapshot.quota.currentFiveHour(now: now) ?? snapshot.quota.weekly
+        let reset = ResetDuration(from: now, to: limit.resetsAt)
         return StatusPresentation(
             modules: [
                 ProviderModule(
                     provider: .openAI,
                     remainingPercent: Int(limit.remainingPercent.rounded()),
-                    reset: reset.compact,
+                    reset: reset.menuBar,
                     resetSpoken: reset.spoken,
-                    isStale: isStaleOverride ?? (snapshot.quota.freshness == .stale)
+                    isStale: (isStaleOverride ?? false) || snapshot.quota.isStale(at: now)
                 )
             ]
         )
     }
 
-    private static func fiveHourLimit(in other: [RateLimit]) -> RateLimit? {
-        other.first { limit in
-            let identifier = limit.limitId.lowercased()
-            return identifier.contains("five_hour")
-                || identifier.contains("five-hour")
-                || identifier.contains("fivehour")
-                || identifier.contains("5-hour")
-                || identifier.contains("5h")
-        }
-    }
-}
-
-private struct StatusResetDuration {
-    let days: Int
-    let hours: Int
-
-    init(from start: Date, to end: Date, calendar: Calendar) {
-        guard end > start else {
-            days = 0
-            hours = 0
-            return
-        }
-
-        let components = calendar.dateComponents([.day, .hour], from: start, to: end)
-        days = max(0, components.day ?? 0)
-        hours = max(0, components.hour ?? 0)
-    }
-
-    var compact: String {
-        if days == 0 {
-            return "\(hours)h"
-        }
-        return "\(days)d \(hours)h"
-    }
-
-    var spoken: String {
-        if days == 0 {
-            return hours == 1 ? "1 hour" : "\(hours) hours"
-        }
-
-        let dayUnit = days == 1 ? "day" : "days"
-        let hourUnit = hours == 1 ? "hour" : "hours"
-        return "\(days) \(dayUnit) and \(hours) \(hourUnit)"
+    static func claude(snapshot: ClaudeUsageSnapshot?, enabled: Bool, hasError: Bool, now: Date = Date()) -> StatusPresentation {
+        guard enabled, let snapshot, let limit = snapshot.currentPreferredLimit(at: now) else { return StatusPresentation(modules: []) }
+        let reset = ResetDuration(from: now, to: limit.resetsAt)
+        return StatusPresentation(modules: [ProviderModule(provider: .claude,
+            remainingPercent: Int(limit.remainingPercent.rounded()), reset: reset.menuBar,
+            resetSpoken: reset.spoken,
+            isStale: hasError || snapshot.freshness == .stale || snapshot.windowIsStale(limit, at: now))])
     }
 }

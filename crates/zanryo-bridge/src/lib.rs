@@ -1,7 +1,7 @@
 mod envelope;
 mod handle;
 
-use std::ffi::{CString, c_char};
+use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
@@ -73,6 +73,51 @@ pub unsafe extern "C" fn zanryo_refresh_json(handle: *mut BridgeHandle) -> *mut 
         };
 
         match handle.refresh() {
+            Ok(data) => serialize(&success(data)),
+            Err(error) => serialize(&failure(error)),
+        }
+    })
+}
+
+/// # Safety
+/// `handle` must be null or a live Zanryo handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zanryo_claude_cached_json(handle: *mut BridgeHandle) -> *mut c_char {
+    guarded_json(|| {
+        let Some(handle) = (unsafe { handle.as_ref() }) else {
+            return serialize(&failure(BridgeError::invalid_handle()));
+        };
+        match handle.claude_cached() {
+            Ok(data) => serialize(&success(data)),
+            Err(error) => serialize(&failure(error)),
+        }
+    })
+}
+
+/// # Safety
+/// `handle` must be null or live. `working_directory` must be null or a valid
+/// NUL-terminated UTF-8 string for the duration of this synchronous call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zanryo_claude_refresh_json(
+    handle: *mut BridgeHandle,
+    working_directory: *const c_char,
+) -> *mut c_char {
+    guarded_json(|| {
+        let Some(handle) = (unsafe { handle.as_ref() }) else {
+            return serialize(&failure(BridgeError::invalid_handle()));
+        };
+        if working_directory.is_null() {
+            return serialize(&failure(BridgeError::internal(
+                "Claude trusted directory is not configured",
+            )));
+        }
+        let Ok(directory) = (unsafe { CStr::from_ptr(working_directory) }).to_str() else {
+            return serialize(&failure(BridgeError::internal("invalid directory")));
+        };
+        if directory.len() > 4096 || !std::path::Path::new(directory).is_absolute() {
+            return serialize(&failure(BridgeError::internal("invalid directory")));
+        }
+        match handle.claude_refresh(std::path::Path::new(directory)) {
             Ok(data) => serialize(&success(data)),
             Err(error) => serialize(&failure(error)),
         }

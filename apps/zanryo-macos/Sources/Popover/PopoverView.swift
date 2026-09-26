@@ -4,6 +4,7 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
     @ObservedObject var registry: ProviderRegistry
+    @State var codexChartWindow: QuotaChartWindow = .weekly
 
     private var model: PopoverDashboardModel {
         PopoverDashboardModel.make(
@@ -18,6 +19,8 @@ struct PopoverView: View {
             divider
             if registry.selectedProvider == .openAI {
                 openAIDashboard
+            } else if registry.selectedProvider == .claude {
+                ClaudeUsageView(registry: registry)
             } else {
                 unavailableProviderSurface
             }
@@ -38,6 +41,7 @@ struct PopoverView: View {
 
             if let selectedProvider = registry.selectedProvider {
                 Toggle("Show in menu bar", isOn: menuBarBinding(for: selectedProvider))
+                    .tint(selectedProvider == .claude ? PopoverColor.claudeAccent : Color.accentColor)
                     .font(.system(size: 9.4, weight: .medium))
                     .fixedSize()
                     .accessibilityLabel("Show \(selectedProvider.displayName) in the menu bar")
@@ -50,7 +54,7 @@ struct PopoverView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
 
-            if store.isRefreshing {
+            if registry.selectedProvider == .claude ? registry.claudeIsRefreshing : store.isRefreshing {
                 ProgressView()
                     .controlSize(.small)
                     .tint(PopoverColor.secondaryForeground)
@@ -62,9 +66,14 @@ struct PopoverView: View {
     }
 
     private var headerStatusText: String {
+        if registry.selectedProvider == .claude {
+            if registry.claudeIsRefreshing { return "Refreshing" }
+            if let snapshot = registry.claudeSnapshot { return registry.claudeError != nil || snapshot.isStale() ? "Saved" : "Updated" }
+        }
         guard registry.selectedProvider == .openAI else {
             return registry.selectedProvider == nil ? "No provider" : "Unavailable"
         }
+        if !store.isRefreshing, store.lastError != nil || store.snapshot?.quota.isStale() == true { return "Saved" }
         return model.headerText
     }
 
@@ -73,8 +82,9 @@ struct PopoverView: View {
             return "No supported provider is installed."
         }
         guard selectedProvider == .openAI else {
-            return "(selectedProvider.displayName) quota data is unavailable."
+            return "\(selectedProvider.displayName). \(headerStatusText)."
         }
+        if headerStatusText == "Saved" { return "Saved Codex quota. Refresh needed." }
         return model.headerAccessibilityText
     }
 
@@ -116,6 +126,7 @@ struct PopoverView: View {
             ForEach(registry.installedProviders, id: \.self) { provider in
                 Button {
                     registry.select(provider)
+                    if provider == .claude { Task { await registry.refreshClaude() } }
                 } label: {
                     providerGlyph(for: provider)
                         .frame(width: 22, height: 22)
@@ -147,12 +158,12 @@ struct PopoverView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundStyle(PopoverColor.foreground)
+                .foregroundStyle(provider == .claude ? PopoverColor.claudeAccent : PopoverColor.foreground)
                 .padding(2.5)
         } else {
-            Text(provider == .openAI ? "O" : "A")
+            Text(provider == .openAI ? "O" : "C")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.foreground)
+                .foregroundStyle(provider == .claude ? PopoverColor.claudeAccent : PopoverColor.foreground)
         }
     }
 
@@ -164,16 +175,52 @@ struct PopoverView: View {
     }
 
     private var openAIDashboard: some View {
-        Group {
-            quotaStrip
-            divider
-            forecastSurface
-            divider
-            decisionRows
-            metricExplanation
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 0) {
+                    QuotaStripView(provider: model.account.plan == "Unknown" ? "Codex" : "Codex · \(model.account.plan)",
+                        windows: codexWindows, accent: PopoverColor.accent,
+                        emptyText: store.isRefreshing ? "Reading Codex usage…" : "Codex usage unavailable")
+                    divider
+                    WeeklyChartView(timeline: .init(series: codexOutlook.series, reset: codexChartLimit?.resetsAt, window: activeCodexWindow),
+                        pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex",
+                        availableWindows: codexChartWindows, selection: $codexChartWindow)
+                    divider
+                    OutlookMetricsView(rows: codexOutlook.rows, explanation: codexOutlook.explanation)
+                }
+            }
             divider
             footer
         }
+    }
+
+    private var codexOutlook: WeeklyOutlookModel {
+        let snapshot = store.snapshot
+        let limit = codexChartLimit
+        let now = Date()
+        let stale = store.lastError != nil || snapshot?.quota.freshness == .stale || limit.map {
+            now.timeIntervalSince($0.observedAt) > 360 || $0.observedAt > now || $0.resetsAt <= now
+        } == true
+        return .make(weekly: limit,
+                     report: activeCodexWindow == .fiveHour ? snapshot?.fiveHourForecast : snapshot?.forecast,
+                     isStale: stale, window: activeCodexWindow)
+    }
+
+    private var codexChartWindows: [QuotaChartWindow] {
+        QuotaChartWindow.available(fiveHour: store.snapshot?.quota.currentFiveHour(now: Date()), weekly: store.snapshot?.quota.weekly)
+    }
+    private var activeCodexWindow: QuotaChartWindow { codexChartWindow.resolved(in: codexChartWindows) }
+    private var codexChartLimit: RateLimit? {
+        activeCodexWindow == .fiveHour ? store.snapshot?.quota.currentFiveHour(now: Date()) : store.snapshot?.quota.weekly
+    }
+
+    private var codexWindows: [QuotaStripView.Window] {
+        guard let quota = store.snapshot?.quota else { return [] }
+        var result: [QuotaStripView.Window] = []
+        if let five = quota.currentFiveHour(now: Date()) { result.append(.init(title: "5 hours", limit: five)) }
+        result.append(.init(title: "Weekly", limit: quota.weekly))
+        if let spark = quota.currentOptional(quota.spark, now: Date()) { result.append(.init(title: "Spark", limit: spark)) }
+        return result
     }
 
     private var unavailableProviderSurface: some View {
@@ -212,188 +259,6 @@ struct PopoverView: View {
         return "Quota collection is not available for this provider yet."
     }
 
-    private var quotaStrip: some View {
-        HStack(spacing: 0) {
-            if let weekly = model.weekly {
-                quotaCell(weekly, valueColor: PopoverColor.accent)
-            } else {
-                loadingQuotaCell
-            }
-
-            Divider()
-                .overlay(PopoverColor.divider)
-                .padding(.vertical, 12)
-
-            quotaCell(model.spark, valueColor: PopoverColor.foreground)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private func quotaCell(
-        _ quota: PopoverDashboardModel.QuotaDisplay,
-        valueColor: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(quota.label.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-
-            Text(quota.valueText)
-                .font(quotaValueFont(for: quota))
-                .foregroundStyle(valueColor)
-                .lineLimit(1)
-
-            Text("RESET \(quota.reset.uppercased())")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(quota.accessibilityDescription)
-    }
-
-    private func quotaValueFont(for quota: PopoverDashboardModel.QuotaDisplay) -> Font {
-        .system(
-            size: quota.isAvailable ? 28 : 16,
-            weight: quota.isAvailable ? .semibold : .medium,
-            design: .monospaced
-        )
-    }
-
-    private var loadingQuotaCell: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("WEEKLY")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-
-            Text("Loading")
-                .font(.system(size: 18, weight: .medium, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-
-            Text("RESET PENDING")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(model.loadingWeeklyAccessibilityLabel)
-    }
-
-    private var forecastSurface: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("WEEKLY FORECAST")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(PopoverColor.accent)
-
-                Spacer(minLength: 12)
-
-                forecastPaceHeader
-            }
-
-            if !model.hasForecastProjection {
-                Text("Forecast will appear after more history.")
-                    .font(.caption)
-                    .foregroundStyle(PopoverColor.secondaryForeground)
-            }
-
-            if model.forecastSeries.isEmpty {
-                Text("Forecast data will appear after quota history is collected.")
-                    .font(.caption)
-                    .foregroundStyle(PopoverColor.secondaryForeground)
-                    .padding(.vertical, 22)
-            } else {
-                ForecastChartView(
-                    series: model.forecastSeries,
-                    accessibilityLabel: model.chartAccessibilityLabel
-                )
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 9)
-        .background(PopoverColor.forecastSurface)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(model.forecastSectionAccessibilityLabel)
-    }
-
-    private var forecastPaceHeader: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(forecastPaceHeaderTitle.uppercased())
-                .font(.system(size: 8.6, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.secondaryForeground)
-
-            Text(forecastPaceHeaderValue)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(PopoverColor.foreground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
-        .frame(maxWidth: 178, alignment: .trailing)
-        .accessibilityLabel(model.forecastPaceText.replacingOccurrences(of: "\n", with: ", "))
-    }
-
-    private var forecastPaceHeaderTitle: String {
-        forecastPaceTextParts.title
-    }
-
-    private var forecastPaceHeaderValue: String {
-        forecastPaceTextParts.value
-    }
-
-    private var forecastPaceTextParts: (title: String, value: String) {
-        let parts = model.forecastPaceText
-            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-            .map(String.init)
-
-        if parts.count == 2 {
-            return (parts[0], parts[1])
-        }
-
-        return ("Forecast", model.forecastPaceText)
-    }
-
-    private var decisionRows: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(model.decisionRows.enumerated()), id: \.offset) { index, row in
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text(row.label)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(PopoverColor.secondaryForeground)
-
-                    Spacer(minLength: 12)
-
-                    Text(row.value)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(PopoverColor.foreground)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-
-                if index < model.decisionRows.count - 1 {
-                    Divider()
-                        .overlay(PopoverColor.divider)
-                        .padding(.leading, 16)
-                }
-            }
-        }
-    }
-
-    private var metricExplanation: some View {
-        Text("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly 100% to 0% budget pace.")
-            .font(.system(size: 10.2, weight: .medium))
-            .foregroundStyle(PopoverColor.secondaryForeground)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(PopoverColor.forecastSurface.opacity(0.55))
-            .accessibilityLabel("Yellow is observed remaining. Red is the current-pace forecast. Gray is the weekly one hundred percent to zero percent budget pace.")
-    }
-
     private var footer: some View {
         HStack(alignment: .center, spacing: 12) {
             Group {
@@ -402,7 +267,7 @@ struct PopoverView: View {
                         .foregroundStyle(PopoverColor.warning)
                         .accessibilityLabel(model.refreshErrorAccessibilityLabel(for: error.message))
                 } else {
-                    Text(model.footerText)
+                    Text(store.snapshot?.quota.isStale() == true ? "Saved data · refresh needed" : model.footerText)
                         .foregroundStyle(PopoverColor.secondaryForeground)
                 }
             }
@@ -431,6 +296,7 @@ struct PopoverView: View {
 }
 
 enum PopoverColor {
+    static let claudeAccent = Color(nsColor: ProviderAppearance.claudeAccent)
     static let background = Color(red: 12 / 255, green: 14 / 255, blue: 16 / 255)
     static let forecastSurface = Color(red: 22 / 255, green: 25 / 255, blue: 29 / 255)
     static let foreground = Color(red: 248 / 255, green: 243 / 255, blue: 232 / 255)
@@ -444,7 +310,7 @@ enum PopoverColor {
     static let chartGrid = Color.white.opacity(0.10)
     static let chartSurface = Color.black.opacity(0.14)
     static let chartForecastFill = Color(red: 255 / 255, green: 91 / 255, blue: 91 / 255).opacity(0.13)
-    static let accent = Color(red: 242 / 255, green: 182 / 255, blue: 50 / 255)
+    static let accent = Color(nsColor: ProviderAppearance.codexAccent)
     static let divider = Color.white.opacity(0.12)
     static let warning = Color(red: 255 / 255, green: 163 / 255, blue: 163 / 255)
 }

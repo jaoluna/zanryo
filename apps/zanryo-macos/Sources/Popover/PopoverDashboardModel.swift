@@ -102,7 +102,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
             )
         }
 
-        let weeklyReset = ResetDuration(formatFrom: now, to: dashboard.quota.weekly.resetsAt)
+        let weeklyReset = ResetDuration(from: now, to: dashboard.quota.weekly.resetsAt)
         let weekly = QuotaDisplay(
             label: "Weekly",
             isAvailable: true,
@@ -117,7 +117,7 @@ struct PopoverDashboardModel: Equatable, Sendable {
             )
         )
         let spark = dashboard.quota.spark.map { limit in
-            let reset = ResetDuration(formatFrom: now, to: limit.resetsAt)
+            let reset = ResetDuration(from: now, to: limit.resetsAt)
             return QuotaDisplay(
                 label: "Spark",
                 isAvailable: true,
@@ -481,40 +481,5 @@ struct PopoverDashboardModel: Equatable, Sendable {
         let text: String
         let accessibilityText: String
         let footerText: String
-    }
-}
-
-private struct ResetDuration {
-    let days: Int
-    let hours: Int
-
-    init(formatFrom start: Date, to end: Date) {
-        guard end > start else {
-            days = 0
-            hours = 0
-            return
-        }
-
-        let components = Calendar.current.dateComponents([.day, .hour], from: start, to: end)
-        days = max(0, components.day ?? 0)
-        hours = max(0, components.hour ?? 0)
-    }
-
-    var compact: String {
-        if days == 0 {
-            return "\(hours)h"
-        }
-
-        return "\(days)d \(hours)h"
-    }
-
-    var spoken: String {
-        if days == 0 {
-            return hours == 1 ? "1 hour" : "\(hours) hours"
-        }
-
-        let dayUnit = days == 1 ? "day" : "days"
-        let hourUnit = hours == 1 ? "hour" : "hours"
-        return "\(days) \(dayUnit) and \(hours) \(hourUnit)"
     }
 }

@@ -4,6 +4,8 @@ import SwiftUI
 struct ForecastChartView: View {
     let series: [PopoverForecastPoint]
     let accessibilityLabel: String
+    var observedColor: Color = PopoverColor.chartSol
+    var displayDomain: ClosedRange<Date>? = nil
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -17,16 +19,23 @@ struct ForecastChartView: View {
         series.filter { $0.kind == .sustainable }
     }
 
-    private var currentPoint: PopoverForecastPoint? {
-        forecast.first ?? observed.last ?? sustainable.first
+    var currentPoint: PopoverForecastPoint? {
+        // Keep the restored visual without labeling a guide or estimate as a reading.
+        observed.last
     }
 
-    private var timelineAxisDates: [Date] {
+    var timelineAxisDates: [Date] {
         guard let range = timelineRange else {
             return []
         }
 
         let calendar = Calendar.current
+        if range.end.timeIntervalSince(range.start) <= 6 * 3600 {
+            var dates = stride(from: range.start.timeIntervalSince1970,
+                               to: range.end.timeIntervalSince1970, by: 3600).map(Date.init(timeIntervalSince1970:))
+            dates.append(range.end)
+            return dates
+        }
         let totalDays = max(
             1,
             Int(ceil(range.end.timeIntervalSince(range.start) / 86_400))
@@ -49,6 +58,7 @@ struct ForecastChartView: View {
     }
 
     private var timelineRange: (start: Date, end: Date)? {
+        if let displayDomain { return (displayDomain.lowerBound, displayDomain.upperBound) }
         let sustainableDates = sustainable.map(\.at)
         if let start = sustainableDates.min(),
            let end = sustainableDates.max(),
@@ -84,17 +94,8 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Budget pace"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round, dash: [4, 5])
+                        StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round, dash: [4, 5])
                     )
-                }
-
-                if let currentPoint {
-                    PointMark(
-                        x: .value("Time", currentPoint.at),
-                        y: .value("Remaining", currentPoint.remainingPercent)
-                    )
-                    .symbolSize(32)
-                    .foregroundStyle(by: .value("Series", "Observed"))
                 }
 
                 ForEach(observed, id: \.at) { point in
@@ -105,17 +106,8 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Observed"))
                     .interpolationMethod(.monotone)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round)
+                        StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                     )
-
-                    if point.at == observed.last?.at {
-                        PointMark(
-                            x: .value("Time", point.at),
-                            y: .value("Remaining", point.remainingPercent)
-                        )
-                        .symbolSize(26)
-                        .foregroundStyle(by: .value("Series", "Observed"))
-                    }
                 }
 
                 ForEach(forecast, id: \.at) { point in
@@ -126,7 +118,7 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
+                        StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                     )
                 }
 
@@ -139,11 +131,21 @@ struct ForecastChartView: View {
                     .symbolSize(22)
                     .foregroundStyle(by: .value("Series", "Depletion"))
                 }
+
+                // A single marker, above both curves, avoids an overdrawn join.
+                if let currentPoint {
+                    PointMark(
+                        x: .value("Time", currentPoint.at),
+                        y: .value("Remaining", currentPoint.remainingPercent)
+                    )
+                    .symbolSize(24)
+                    .foregroundStyle(by: .value("Series", "Observed"))
+                }
             }
-            .chartYScale(domain: 0 ... 100)
-            .chartXScale(domain: timelineDomain)
+            .chartYScale(domain: 0 ... 100, range: .plotDimension(padding: 3))
+            .chartXScale(domain: timelineDomain, range: .plotDimension(padding: 3))
             .chartForegroundStyleScale([
-                "Observed": PopoverColor.chartSol,
+                "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
                 "Budget pace": PopoverColor.chartLuna
             ])
@@ -190,9 +192,15 @@ struct ForecastChartView: View {
                     )
             }
             HStack(spacing: 12) {
-                legendItem("Observed", color: PopoverColor.chartSol, dashed: false)
-                legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
-                legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
+                if !observed.isEmpty {
+                    legendItem("Observed", color: observedColor, dashed: false)
+                }
+                if !forecast.isEmpty {
+                    legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
+                }
+                if !sustainable.isEmpty {
+                    legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -244,7 +252,9 @@ struct ForecastChartView: View {
         timeFormatter.timeZone = .current
         timeFormatter.dateFormat = "HH:mm"
 
-        return "\(dayFormatter.string(from: date).uppercased())\n\(timeFormatter.string(from: date))"
+        return isEndpointDate(date)
+            ? "\(dayFormatter.string(from: date).uppercased())\n\(timeFormatter.string(from: date))"
+            : timeFormatter.string(from: date)
     }
 
     private func isEndpointDate(_ date: Date) -> Bool {
@@ -272,6 +282,7 @@ struct ForecastChartView: View {
         return .top
     }
 }
+
 
 private extension Array where Element == Date {
     func deduplicated() -> [Date] {

@@ -98,3 +98,33 @@ fn dashboard_serialization_preserves_legacy_public_shape() {
     assert!(decoded.quota.five_hour.is_none());
     assert!(decoded.quota.fable.is_none());
 }
+
+#[test]
+fn five_hour_window_crosses_dashboard_bridge_without_changing_weekly_or_spark() {
+    let now = Utc.with_ymd_and_hms(2026, 9, 25, 21, 0, 0).unwrap();
+    let five = RateLimit::new(
+        ProviderId::OpenAi,
+        LimitKind::FiveHour,
+        "codex_primary",
+        43.0,
+        now + Duration::hours(3),
+        now,
+    )
+    .unwrap();
+    let quota = zanryo_core::QuotaSnapshot::from_limits(
+        ProviderId::OpenAi,
+        vec![
+            weekly(now, 21.0, now + Duration::days(5)),
+            five,
+            spark(now, 87.0, now + Duration::hours(2)),
+        ],
+        Freshness::Fresh,
+    )
+    .unwrap();
+    let value = serde_json::to_value(&quota).unwrap();
+    assert_eq!(value["five_hour"]["remaining_percent"], 43.0);
+    assert_eq!(value["weekly"]["remaining_percent"], 21.0);
+    assert_eq!(value["spark"]["remaining_percent"], 87.0);
+    let decoded: zanryo_core::QuotaSnapshot = serde_json::from_value(value).unwrap();
+    assert_eq!(decoded.five_hour.unwrap().kind, LimitKind::FiveHour);
+}
