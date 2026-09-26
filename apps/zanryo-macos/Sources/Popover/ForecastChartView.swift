@@ -6,13 +6,6 @@ struct ForecastChartView: View {
     let accessibilityLabel: String
     var observedColor: Color = PopoverColor.chartSol
     var displayDomain: ClosedRange<Date>? = nil
-    var onlyAvailableLegends = false
-    var forecastDashed = false
-    var forecastLabel = "Depletion"
-    var markEstimatedAsObserved = true
-    var evenlySpacedTimeTicks = false
-    var insetPoints = false
-    var projectionBoundary: Date? = nil
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -26,19 +19,14 @@ struct ForecastChartView: View {
         series.filter { $0.kind == .sustainable }
     }
 
-    private var currentPoint: PopoverForecastPoint? {
-        if !markEstimatedAsObserved { return observed.last }
-        return forecast.first ?? observed.last ?? sustainable.first
+    var currentPoint: PopoverForecastPoint? {
+        // Keep the restored visual without labeling a guide or estimate as a reading.
+        observed.last
     }
 
-    private var timelineAxisDates: [Date] {
+    var timelineAxisDates: [Date] {
         guard let range = timelineRange else {
             return []
-        }
-
-        if evenlySpacedTimeTicks {
-            let duration = range.end.timeIntervalSince(range.start)
-            return (0...3).map { range.start.addingTimeInterval(duration * Double($0) / 3) }
         }
 
         let calendar = Calendar.current
@@ -92,17 +80,12 @@ struct ForecastChartView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Chart {
-                if let projectionBoundary {
-                    RuleMark(x: .value("Projection begins", projectionBoundary))
-                        .foregroundStyle(PopoverColor.secondaryForeground.opacity(0.35))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 4]))
-                }
                 ForEach(sustainable, id: \.at) { point in
                     LineMark(
                         x: .value("Time", point.at),
                         y: .value("Remaining", point.remainingPercent)
                     )
-                    .foregroundStyle(by: .value("Series", "Ideal cycle"))
+                    .foregroundStyle(by: .value("Series", "Budget pace"))
                     .interpolationMethod(.linear)
                     .lineStyle(
                         StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round, dash: [4, 5])
@@ -147,7 +130,7 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round, dash: forecastDashed ? [5, 4] : [])
+                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
                     )
                 }
 
@@ -161,12 +144,12 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                 }
             }
-            .chartYScale(domain: 0 ... 100, range: .plotDimension(padding: insetPoints ? 6 : 0))
-            .chartXScale(domain: timelineDomain, range: .plotDimension(padding: insetPoints ? 6 : 0))
+            .chartYScale(domain: 0 ... 100)
+            .chartXScale(domain: timelineDomain)
             .chartForegroundStyleScale([
                 "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
-                "Ideal cycle": PopoverColor.chartLuna
+                "Budget pace": PopoverColor.chartLuna
             ])
             .chartLegend(.hidden)
             .chartXAxis {
@@ -211,14 +194,14 @@ struct ForecastChartView: View {
                     )
             }
             HStack(spacing: 12) {
-                if !onlyAvailableLegends || !observed.isEmpty {
+                if !observed.isEmpty {
                     legendItem("Observed", color: observedColor, dashed: false)
                 }
-                if !onlyAvailableLegends || !forecast.isEmpty {
-                    legendItem(forecastLabel, color: PopoverColor.chartDepletion, dashed: forecastDashed)
+                if !forecast.isEmpty {
+                    legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
                 }
-                if !onlyAvailableLegends || !sustainable.isEmpty {
-                    legendItem("Ideal cycle", color: PopoverColor.chartLuna, dashed: true)
+                if !sustainable.isEmpty {
+                    legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
                 }
             }
         }

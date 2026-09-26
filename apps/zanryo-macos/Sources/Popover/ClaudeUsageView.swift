@@ -15,8 +15,7 @@ struct ClaudeUsageView: View {
                         emptyText: registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
                     divider
                     WeeklyChartView(timeline: .init(series: model.series, reset: registry.claudeSnapshot?.weekly?.resetsAt),
-                        pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude",
-                        confidence: model.rows.first { $0.label == "Confidence" }?.value)
+                        pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude")
                     divider
                     OutlookMetricsView(rows: model.rows, explanation: model.explanation)
                     if let error = registry.claudeError {

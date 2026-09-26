@@ -74,7 +74,7 @@ struct WeeklyOutlookModel {
                                  lowUncertainty: nil, highUncertainty: nil),
         ]
         let pending = stale ? "Refresh needed" : "Collecting history"
-        let pace = estimated ? rate(report?.consumedPerDay) : pending
+        let pace = estimated ? currentPace(report?.consumedPerDay) : pending
         let depletion: String
         if estimated, let date = report?.estimatedDepletionAt {
             depletion = date.formatted(date: .abbreviated, time: .shortened)
@@ -103,5 +103,11 @@ struct WeeklyOutlookModel {
 
     private static func rate(_ value: Double?) -> String {
         value.map { String(format: "%.1f pp/day", $0) } ?? "Unavailable"
+    }
+
+    private static func currentPace(_ value: Double?) -> String {
+        guard let value else { return "Unavailable" }
+        // Five-hour equivalent of the WEEKLY pace, never the separate 5h quota.
+        return String(format: "%.1f pp/day · %.1f pp/5h", value, value * 5 / 24)
     }
 }

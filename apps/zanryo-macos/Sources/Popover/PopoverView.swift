@@ -182,8 +182,7 @@ struct PopoverView: View {
                         emptyText: store.isRefreshing ? "Reading Codex usage…" : "Codex usage unavailable")
                     divider
                     WeeklyChartView(timeline: .init(series: codexOutlook.series, reset: store.snapshot?.quota.weekly.resetsAt),
-                        pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex",
-                        confidence: codexOutlook.rows.first { $0.label == "Confidence" }?.value)
+                        pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex")
                     divider
                     OutlookMetricsView(rows: codexOutlook.rows, explanation: codexOutlook.explanation)
                 }

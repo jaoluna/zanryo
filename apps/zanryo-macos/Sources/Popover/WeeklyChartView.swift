@@ -29,7 +29,7 @@ struct WeeklyChartTimeline {
         let kinds = Set(series.map(\.kind))
         var parts = ["\(provider) weekly remaining quota."]
         if kinds.contains(.observed) { parts += [historyCaption, "Solid line: observed."] }
-        if kinds.contains(.forecast) { parts.append("Red dashed line: estimated, not guaranteed.") }
+        if kinds.contains(.forecast) { parts.append("Solid red line: estimated, not guaranteed.") }
         if kinds.contains(.sustainable) { parts.append("Gray dashed line: fixed ideal cycle, 100 percent at cycle start to zero at reset, not observed usage.") }
         if series.isEmpty { parts.append("No data available.") }
         return parts.joined(separator: " ")
@@ -41,17 +41,24 @@ struct WeeklyChartView: View {
     let pace: String
     let accent: Color
     let provider: String
-    var confidence: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("WEEKLY OUTLOOK")
+                Text("WEEKLY FORECAST")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(accent)
-                Spacer(minLength: 4)
-                Text(pace).font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(PopoverColor.secondaryForeground)
+                Spacer(minLength: 12)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("CURRENT PACE")
+                        .font(.system(size: 8.6, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(PopoverColor.secondaryForeground)
+                    Text(pace)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(PopoverColor.foreground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }.frame(maxWidth: 178, alignment: .trailing)
             }
             if timeline.series.isEmpty {
                 Text("Weekly history will appear after the first reading.")
@@ -60,21 +67,9 @@ struct WeeklyChartView: View {
             } else {
                 ForecastChartView(series: timeline.series,
                     accessibilityLabel: timeline.accessibilityLabel(provider: provider),
-                    observedColor: accent, displayDomain: timeline.domain,
-                    onlyAvailableLegends: true, forecastDashed: true, forecastLabel: "Projected",
-                    markEstimatedAsObserved: false, evenlySpacedTimeTicks: true, insetPoints: true,
-                    projectionBoundary: timeline.boundary)
+                    observedColor: accent, displayDomain: timeline.domain)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(timeline.historyCaption)
-                    .fixedSize(horizontal: false, vertical: true)
-                if timeline.hasProjection, let confidence {
-                    Spacer(minLength: 0)
-                    Text("\(confidence) confidence").fontWeight(.semibold)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-            }.font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
-        }.padding(.horizontal, 16).padding(.vertical, 12)
+        }.padding(.horizontal, 16).padding(.vertical, 9)
             .background(PopoverColor.forecastSurface)
     }
 }
