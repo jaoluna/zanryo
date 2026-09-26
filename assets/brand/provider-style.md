@@ -79,6 +79,16 @@ panel. This extends the selected dashboard direction, not a new brand concept.
   sparse/flat history, estimate, stale/error and missing data, plus both menu themes.
   No collector cadence, authentication, schema or billing inference changes.
 
+## Stroke refinement, 2026-09-26
+
+João retained the restored scale/composition and requested a cleaner continuous
+stroke, especially for Claude. Keep the complete weekly time axis and 0–100%
+range. Use equal 2.2pt rounded observed/forecast strokes, a quieter 1.25pt ideal
+guide, one current-reading marker above the lines and 3pt plot insets to avoid
+clipping endpoint strokes. Preserve monotone observed interpolation, linear
+forecast and every underlying observation; no moving average, invented history
+or curve fitted to hide measured drops. The collector and engine remain unchanged.
+
 ## Personal-plan design study and next data layer, 2026-09-25
 
 Deferred by the graph-restoration request. These proposals are not an approved
