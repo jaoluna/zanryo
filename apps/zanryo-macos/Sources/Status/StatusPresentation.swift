@@ -65,10 +65,11 @@ struct StatusPresentation: Equatable, Sendable {
     }
 
     static func claude(snapshot: ClaudeUsageSnapshot?, enabled: Bool, hasError: Bool, now: Date = Date()) -> StatusPresentation {
-        guard enabled, let snapshot, let limit = snapshot.preferredLimit else { return StatusPresentation(modules: []) }
+        guard enabled, let snapshot, let limit = snapshot.currentPreferredLimit(at: now) else { return StatusPresentation(modules: []) }
         let reset = ResetDuration(from: now, to: limit.resetsAt)
         return StatusPresentation(modules: [ProviderModule(provider: .claude,
             remainingPercent: Int(limit.remainingPercent.rounded()), reset: reset.menuBar,
-            resetSpoken: reset.spoken, isStale: hasError || snapshot.isStale(at: now))])
+            resetSpoken: reset.spoken,
+            isStale: hasError || snapshot.freshness == .stale || snapshot.windowIsStale(limit, at: now))])
     }
 }

@@ -22,10 +22,14 @@ struct ClaudeUsageSnapshot: Decodable, Equatable, Sendable {
 
     var preferredLimit: RateLimit? { fiveHour ?? weekly }
     var windows: [RateLimit] { [fiveHour, weekly].compactMap { $0 } }
+    func currentPreferredLimit(at now: Date) -> RateLimit? {
+        windows.first { !windowIsStale($0, at: now) } ?? preferredLimit
+    }
+    func windowIsStale(_ limit: RateLimit, at now: Date) -> Bool {
+        now.timeIntervalSince(limit.observedAt) > 360 || limit.observedAt > now || limit.resetsAt <= now
+    }
     func isStale(at now: Date = Date()) -> Bool {
-        freshness == .stale || windows.contains {
-            now.timeIntervalSince($0.observedAt) > 360 || $0.observedAt > now || $0.resetsAt <= now
-        }
+        freshness == .stale || windows.contains { windowIsStale($0, at: now) }
     }
 }
 
