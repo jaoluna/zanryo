@@ -7,6 +7,11 @@ struct ForecastChartView: View {
     var observedColor: Color = PopoverColor.chartSol
     var displayDomain: ClosedRange<Date>? = nil
     var onlyAvailableLegends = false
+    var forecastDashed = false
+    var forecastLabel = "Depletion"
+    var markEstimatedAsObserved = true
+    var evenlySpacedTimeTicks = false
+    var insetPoints = false
 
     private var observed: [PopoverForecastPoint] {
         series.filter { $0.kind == .observed }
@@ -21,12 +26,18 @@ struct ForecastChartView: View {
     }
 
     private var currentPoint: PopoverForecastPoint? {
-        forecast.first ?? observed.last ?? sustainable.first
+        if !markEstimatedAsObserved { return observed.last }
+        return forecast.first ?? observed.last ?? sustainable.first
     }
 
     private var timelineAxisDates: [Date] {
         guard let range = timelineRange else {
             return []
+        }
+
+        if evenlySpacedTimeTicks {
+            let duration = range.end.timeIntervalSince(range.start)
+            return (0...3).map { range.start.addingTimeInterval(duration * Double($0) / 3) }
         }
 
         let calendar = Calendar.current
@@ -130,7 +141,7 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
+                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round, dash: forecastDashed ? [5, 4] : [])
                     )
                 }
 
@@ -144,8 +155,8 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                 }
             }
-            .chartYScale(domain: 0 ... 100)
-            .chartXScale(domain: timelineDomain)
+            .chartYScale(domain: 0 ... 100, range: .plotDimension(padding: insetPoints ? 6 : 0))
+            .chartXScale(domain: timelineDomain, range: .plotDimension(padding: insetPoints ? 6 : 0))
             .chartForegroundStyleScale([
                 "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
@@ -194,9 +205,11 @@ struct ForecastChartView: View {
                     )
             }
             HStack(spacing: 12) {
-                legendItem("Observed", color: observedColor, dashed: false)
+                if !onlyAvailableLegends || !observed.isEmpty {
+                    legendItem("Observed", color: observedColor, dashed: false)
+                }
                 if !onlyAvailableLegends || !forecast.isEmpty {
-                    legendItem("Depletion", color: PopoverColor.chartDepletion, dashed: false)
+                    legendItem(forecastLabel, color: PopoverColor.chartDepletion, dashed: forecastDashed)
                 }
                 if !onlyAvailableLegends || !sustainable.isEmpty {
                     legendItem("Budget pace", color: PopoverColor.chartLuna, dashed: true)
@@ -280,6 +293,7 @@ struct ForecastChartView: View {
         return .top
     }
 }
+
 
 private extension Array where Element == Date {
     func deduplicated() -> [Date] {

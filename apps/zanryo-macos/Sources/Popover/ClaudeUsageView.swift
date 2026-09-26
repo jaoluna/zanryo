@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ClaudeUsageView: View {
     @ObservedObject var registry: ProviderRegistry
+    @State var chartMode: ClaudeChartMode = .history
     private var model: ClaudeDashboardModel {
         .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil)
     }
@@ -56,26 +57,50 @@ struct ClaudeUsageView: View {
             Text("Resets \(limit.resetsAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.system(size: 9.4)).foregroundStyle(PopoverColor.secondaryForeground)
                 .fixedSize(horizontal: false, vertical: true)
+                .help("Local time (\(TimeZone.current.identifier)). In \(ResetDuration(from: Date(), to: limit.resetsAt).compact).")
         }.frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16).padding(.vertical, 12)
     }
 
     private var chartSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        let dashboard = model
+        let mode: ClaudeChartMode = dashboard.hasProjection ? chartMode : .history
+        return VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
-                Text("WEEKLY HISTORY").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                Text("WEEKLY QUOTA").font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(PopoverColor.claudeAccent)
                 Spacer(minLength: 4)
                 Text(model.pace).font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(PopoverColor.secondaryForeground)
             }
-            if model.series.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(ClaudeChartMode.allCases, id: \.self) { choice in
+                    Button { chartMode = choice } label: {
+                        Text(choice.rawValue).font(.system(size: 11, weight: .semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 5)
+                            .background(mode == choice ? PopoverColor.background : .clear,
+                                        in: RoundedRectangle(cornerRadius: 5))
+                            .foregroundStyle(mode == choice ? PopoverColor.foreground : PopoverColor.secondaryForeground)
+                    }.buttonStyle(.plain)
+                        .disabled(choice == .projection && !dashboard.hasProjection)
+                        .opacity(choice == .projection && !dashboard.hasProjection ? 0.4 : 1)
+                        .accessibilityAddTraits(mode == choice ? .isSelected : [])
+                }
+            }.padding(3).background(PopoverColor.chartSurface, in: RoundedRectangle(cornerRadius: 7))
+            if dashboard.series.isEmpty {
                 Text("No weekly readings yet.").font(.caption)
                     .foregroundStyle(PopoverColor.secondaryForeground).padding(.vertical, 38)
             } else {
-                ForecastChartView(series: model.series,
-                    accessibilityLabel: "Claude weekly remaining quota. Orange is observed history; red is an estimate and gray is budget pace when available.",
-                    observedColor: PopoverColor.claudeAccent, displayDomain: model.domain, onlyAvailableLegends: true)
+                ForecastChartView(series: mode == .history ? dashboard.historySeries : dashboard.projectionSeries,
+                    accessibilityLabel: mode == .history
+                        ? "Claude weekly remaining quota. Observed readings only. \(dashboard.historyCaption)"
+                        : "Claude weekly projection. Red dashed line is an estimate; gray is allowed pace. \(dashboard.explanation)",
+                    observedColor: PopoverColor.claudeAccent,
+                    displayDomain: mode == .history ? dashboard.historyDomain : dashboard.projectionDomain,
+                    onlyAvailableLegends: true, forecastDashed: true, forecastLabel: "Projected",
+                    markEstimatedAsObserved: false, evenlySpacedTimeTicks: true, insetPoints: true)
+                Text(mode == .history ? dashboard.historyCaption : "If this pace continues · until weekly reset")
+                    .font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
             }
         }.padding(.horizontal, 16).padding(.vertical, 10)
             .background(PopoverColor.forecastSurface)

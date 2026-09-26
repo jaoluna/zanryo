@@ -4,6 +4,7 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
     @ObservedObject var registry: ProviderRegistry
+    var initialClaudeChartMode: ClaudeChartMode = .history
 
     private var model: PopoverDashboardModel {
         PopoverDashboardModel.make(
@@ -19,7 +20,7 @@ struct PopoverView: View {
             if registry.selectedProvider == .openAI {
                 openAIDashboard
             } else if registry.selectedProvider == .claude {
-                ClaudeUsageView(registry: registry)
+                ClaudeUsageView(registry: registry, chartMode: initialClaudeChartMode)
             } else {
                 unavailableProviderSurface
             }
