@@ -91,6 +91,22 @@ or curve fitted to hide measured drops. The collector and engine remain unchange
 
 ## Personal-plan design study and next data layer, 2026-09-25
 
+### Approved window filter, 2026-09-26
+
+João approved a discreet 5h/Weekly filter within the single existing chart for
+Claude and Codex accounts supplying both windows. This supersedes weekly-only
+navigation, not the restored graph composition. Default to Weekly when present;
+show a small text filter in the chart header only for real available windows,
+with an accent underline and selected accessibility state. One window needs no
+selector. Native buttons retain keyboard focus; no animation, new cards or tabs.
+Keep provider accents, 390x590 panel, 154pt plot, rounded2.2pt strokes and0–100%.
+Five-hour mode uses the current real cycle only, hourly local-time ticks and a
+fixed100→0 guide over reset-minus5h to reset. Never join cycles or seed fake
+history. Change pace/budget units to pp/hour and scope all metrics to the chosen
+window. Missing history stays collecting; stale/expired data cannot project.
+Use separate optional5h reports, same existing storage/collector and no plan-name
+inference, account mutation, schema migration or faster polling.
+
 Deferred by the graph-restoration request. These proposals are not an approved
 next implementation step; restore the original graph before revisiting improvements.
 
