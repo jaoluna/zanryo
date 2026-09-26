@@ -31,3 +31,21 @@ real Claude weekly samples only, orange observed/red estimated/gray budget.
 Never invent an observed 100% cycle-start anchor. Early history shows observations
 before forecast is available. Stale/error hides projections, not observations.
 No billing/plan inference. Keep 390x590; long content scrolls above controls.
+
+## Readable time and Claude history, 2026-09-25
+
+- Reset countdowns share one elapsed-time formatter. Include minutes instead of
+  dropping up to 59 minutes; round up only the final partial minute. Absolute
+  resets use the system's local time, never a manually added hour.
+  The menu bar removes spacing between time units; for weekly windows it rounds
+  UP to the next hour with an explicit approximation mark. Full minutes remain
+  in the panel and accessibility/tooltip. Keep the two provider modules compact.
+- Claude defaults to **History**: orange observations only, on their actual time
+  span (minimum one hour), with the unchanged 0–100% vertical scale. Flat recent
+  readings must remain flat; do not amplify tiny changes or invent older data.
+- **Projection** is a separate selectable view. Red estimates are dashed; gray
+  budget starts at the same estimated current balance and goes to zero at reset,
+  never at an invented historical 100%. Label low-confidence projections.
+- Preserve both quota windows, all metrics and the fixed refresh footer. Disable
+  projection for missing/stale data. Validate a real-shaped short, flat 97%
+  history as well as declining, collecting and stale fixtures.
