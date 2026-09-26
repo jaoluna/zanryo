@@ -51,7 +51,7 @@ final class ProviderAppearanceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let now = Date()
-        for state in ["gpt-weekly-only", "gpt-weekly-long", "gpt-three-windows", "gpt-expired-spark", "gpt-stale", "estimated", "flat-overview", "flat-history", "flat-projection", "projection", "collecting", "stale", "unavailable"] {
+        for state in ["gpt-weekly-only", "gpt-weekly-long", "gpt-three-windows", "gpt-expired-spark", "gpt-stale", "estimated", "flat", "collecting", "stale", "unavailable"] {
             let snapshot = state.hasPrefix("flat") ? ClaudeDashboardFixture.flatSnapshot(now: now) : state == "unavailable" ? nil : ClaudeDashboardFixture.snapshot(
                 now: now, collecting: state == "collecting", stale: state == "stale")
             let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
@@ -60,8 +60,7 @@ final class ProviderAppearanceTests: XCTestCase {
             registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
             let store = ZanryoStore(provider: StyleDashboard(snapshot: state.hasPrefix("gpt") ? Self.longWeeklySnapshot(now: now, state: state) : nil))
             if state.hasPrefix("gpt") { await store.start() }
-            let host = NSHostingView(rootView: PopoverView(store: store, registry: registry,
-                initialClaudeChartMode: state.contains("projection") ? .projection : state.contains("history") ? .history : .overview))
+            let host = NSHostingView(rootView: PopoverView(store: store, registry: registry))
             host.frame = NSRect(x: 0, y: 0, width: 390, height: 590)
             host.appearance = NSAppearance(named: .darkAqua)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)

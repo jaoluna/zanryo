@@ -4,7 +4,6 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
     @ObservedObject var registry: ProviderRegistry
-    var initialClaudeChartMode: QuotaChartMode = .overview
 
     private var model: PopoverDashboardModel {
         PopoverDashboardModel.make(
@@ -20,7 +19,7 @@ struct PopoverView: View {
             if registry.selectedProvider == .openAI {
                 openAIDashboard
             } else if registry.selectedProvider == .claude {
-                ClaudeUsageView(registry: registry, chartMode: initialClaudeChartMode)
+                ClaudeUsageView(registry: registry)
             } else {
                 unavailableProviderSurface
             }
@@ -184,7 +183,7 @@ struct PopoverView: View {
                     divider
                     WeeklyChartView(timeline: .init(series: codexOutlook.series, reset: store.snapshot?.quota.weekly.resetsAt),
                         pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex",
-                        confidence: codexOutlook.rows.first { $0.label == "Confidence" }?.value, mode: initialClaudeChartMode)
+                        confidence: codexOutlook.rows.first { $0.label == "Confidence" }?.value)
                     divider
                     OutlookMetricsView(rows: codexOutlook.rows, explanation: codexOutlook.explanation)
                 }

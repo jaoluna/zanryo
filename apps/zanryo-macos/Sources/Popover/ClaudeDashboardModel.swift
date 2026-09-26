@@ -1,7 +1,5 @@
 import Foundation
 
-typealias ClaudeChartMode = QuotaChartMode
-
 typealias ClaudeDashboardModel = WeeklyOutlookModel
 
 struct WeeklyOutlookModel {

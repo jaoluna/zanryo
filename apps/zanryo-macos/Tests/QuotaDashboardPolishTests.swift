@@ -34,16 +34,15 @@ final class QuotaDashboardPolishTests: XCTestCase {
         XCTAssertEqual(quota.weekly.remainingPercent, 21)
     }
 
-    func testOverviewIncludesForecastButHistoryDoesNotAndNeitherStartsAtInvented100() throws {
+    func testSingleTimelineIncludesHistoryAndForecastWithoutInvented100() throws {
         let now = Date()
         let snapshot = ClaudeDashboardFixture.flatSnapshot(now: now)
         let model = WeeklyOutlookModel.make(snapshot: snapshot, hasError: false, now: now)
         let timeline = WeeklyChartTimeline(series: model.series, reset: snapshot.weekly?.resetsAt)
-        XCTAssertEqual(QuotaChartMode.allCases, [.overview, .history, .projection])
-        XCTAssertEqual(timeline.domain(for: .overview), now.addingTimeInterval(-3600)...snapshot.weekly!.resetsAt)
-        XCTAssertEqual(timeline.domain(for: .history), now.addingTimeInterval(-3600)...now)
-        XCTAssertEqual(timeline.domain(for: .projection), now...snapshot.weekly!.resetsAt)
-        XCTAssertTrue(timeline.points(for: .history).allSatisfy { $0.kind == .observed && $0.remainingPercent == 97 })
+        XCTAssertEqual(timeline.domain, now.addingTimeInterval(-3600)...snapshot.weekly!.resetsAt)
+        XCTAssertEqual(Set(timeline.series.map(\.kind)), [.observed, .forecast, .sustainable])
+        XCTAssertFalse(timeline.observed.isEmpty)
+        XCTAssertTrue(timeline.observed.allSatisfy { $0.remainingPercent == 97 })
         XCTAssertEqual(timeline.boundary, now)
         XCTAssertEqual(timeline.historyCaption, "1h recorded · no change observed")
     }
@@ -70,19 +69,34 @@ final class QuotaDashboardPolishTests: XCTestCase {
         }
     }
 
-    func testChartAccessibilityDescribesOnlyTheSelectedSeries() {
+    func testSingleChartAccessibilityDescribesOnlyAvailableSeries() {
         let now = Date()
         let snapshot = ClaudeDashboardFixture.flatSnapshot(now: now)
         let model = WeeklyOutlookModel.make(snapshot: snapshot, hasError: false, now: now)
         let timeline = WeeklyChartTimeline(series: model.series, reset: snapshot.weekly?.resetsAt)
-        let history = timeline.accessibilityLabel(for: .history, provider: "Claude")
-        let projection = timeline.accessibilityLabel(for: .projection, provider: "Claude")
-        XCTAssertTrue(history.contains("observed"))
-        XCTAssertFalse(history.contains("estimated"))
-        XCTAssertFalse(history.contains("allowed pace"))
-        XCTAssertFalse(projection.contains("observed"))
-        XCTAssertTrue(projection.contains("estimated, not guaranteed"))
-        XCTAssertTrue(projection.contains("allowed pace"))
+        for provider in ["Claude", "Codex"] {
+            let label = timeline.accessibilityLabel(provider: provider)
+            XCTAssertTrue(label.contains("\(provider) weekly remaining quota."))
+            XCTAssertTrue(label.contains("Solid line: observed."))
+            XCTAssertTrue(label.contains("estimated, not guaranteed"))
+            XCTAssertTrue(label.contains("allowed pace"))
+            let saved = WeeklyChartTimeline(series: timeline.observed, reset: snapshot.weekly?.resetsAt)
+            let savedLabel = saved.accessibilityLabel(provider: provider)
+            XCTAssertTrue(savedLabel.contains("observed"))
+            XCTAssertFalse(savedLabel.contains("estimated"))
+            XCTAssertFalse(savedLabel.contains("allowed pace"))
+            XCTAssertNil(saved.boundary)
+            XCTAssertEqual(saved.domain, now.addingTimeInterval(-3600)...now)
+        }
+    }
+
+    func testEmptyTimelineHasNoFakeDomainOrForecast() {
+        let timeline = WeeklyChartTimeline(series: [], reset: Date().addingTimeInterval(86400))
+        XCTAssertNil(timeline.domain)
+        XCTAssertNil(timeline.boundary)
+        XCTAssertFalse(timeline.hasProjection)
+        XCTAssertEqual(timeline.historyCaption, "No weekly readings yet.")
+        XCTAssertEqual(timeline.accessibilityLabel(provider: "Codex"), "Codex weekly remaining quota. No data available.")
     }
 
     private func limit(_ kind: LimitKind, _ id: String, _ percent: Double, now: Date) -> RateLimit {

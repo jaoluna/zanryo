@@ -32,7 +32,7 @@ Never invent an observed 100% cycle-start anchor. Early history shows observatio
 before forecast is available. Stale/error hides projections, not observations.
 No billing/plan inference. Keep 390x590; long content scrolls above controls.
 
-## Readable time and Claude history, 2026-09-25
+## Readable time and Claude history, 2026-09-25 (chart navigation superseded below)
 
 - Reset countdowns share one elapsed-time formatter. Include minutes instead of
   dropping up to 59 minutes; round up only the final partial minute. Absolute
@@ -54,13 +54,15 @@ No billing/plan inference. Keep 390x590; long content scrolls above controls.
 
 João requested Claude's graph at the Codex standard and an updated Codex/Spark
 panel. This extends the selected dashboard direction, not a new brand concept.
-- Both providers use the same quota strip, 100→0 meter and chart controls.
+- Both providers use the same quota strip, 100→0 meter and single chart.
   A single supplied window gets a full-width horizontal summary; two use equal
   columns. An optional Spark window is a compact extra row, never an empty column.
   Missing or expired optional limits are hidden; historical samples remain stored.
-- **Overview** is the default: real observations plus dashed forecast and allowed
-  pace until reset. **History** zooms to the observed span; **Projection** remains
-  available separately. Mark the forecast boundary, never call an estimate observed.
+- **Single weekly chart**, per João's final correction: no Overview, History or
+  Projection tabs. Show real observations plus dashed forecast and allowed pace
+  until reset together, with a visible forecast boundary and confidence. Without
+  a valid forecast, show only recorded history. Never call an estimate observed.
+  João approved the rest of the panel; preserve its layout, colors and controls.
 - Keep 0–100 vertically, actual time horizontally, no synthetic 100% history.
   Shared line widths, axes, padding and typography; yellow Codex, orange Claude.
 - Counts/resets are never summed. Five-hour data crosses the bridge explicitly;
