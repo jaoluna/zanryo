@@ -32,7 +32,7 @@ final class ClaudeDashboardModelTests: XCTestCase {
         let snapshot = ClaudeDashboardFixture.snapshot(now: now)
         let model = ClaudeDashboardModel.make(snapshot: snapshot, hasError: false, now: now)
         XCTAssertTrue(model.hasProjection)
-        XCTAssertEqual(model.pace, "12.0 pp/day")
+        XCTAssertEqual(model.pace, "12.0 pp/day · 2.5 pp/5h")
         XCTAssertEqual(model.series.filter { $0.kind == .observed }.map(\.remainingPercent), [86, 80, 74])
         XCTAssertEqual(model.rows.first { $0.label == "At weekly reset" }?.value, "14.0% remaining")
         XCTAssertEqual(model.domain?.upperBound, snapshot.weekly?.resetsAt)

@@ -183,7 +183,7 @@ private struct PlanDesignPreview: View {
             }
             Divider()
             WeeklyChartView(timeline: .init(series: model.series, reset: fixture.weekly!.resetsAt),
-                pace: model.pace, accent: accent, provider: provider, confidence: "Medium")
+                pace: model.pace, accent: accent, provider: provider)
             Divider()
             OutlookMetricsView(rows: Array(model.rows.prefix(3)), explanation: "Projection assumes the recorded pace continues.")
             HStack {

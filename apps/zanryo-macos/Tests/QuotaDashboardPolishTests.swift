@@ -101,6 +101,43 @@ final class QuotaDashboardPolishTests: XCTestCase {
         XCTAssertEqual(timeline.accessibilityLabel(provider: "Codex"), "Codex weekly remaining quota. No data available.")
     }
 
+    func testRestoredGraphShowsEveryDayAcrossTheFullCycle() throws {
+        let now = Date(timeIntervalSince1970: 1_790_424_000)
+        let snapshot = ClaudeDashboardFixture.snapshot(now: now)
+        let model = WeeklyOutlookModel.make(snapshot: snapshot, hasError: false, now: now)
+        let chart = ForecastChartView(series: model.series, accessibilityLabel: "Test", displayDomain: model.domain)
+        let ticks = chart.timelineAxisDates
+        XCTAssertEqual(ticks.count, 8, "Restore daily ticks, not four spaced milestones")
+        XCTAssertEqual(ticks.first, model.domain?.lowerBound)
+        XCTAssertEqual(ticks.last, snapshot.weekly?.resetsAt)
+        for (previous, next) in zip(ticks, ticks.dropFirst()) {
+            XCTAssertEqual(Calendar.current.dateComponents([.day], from: previous, to: next).day, 1)
+        }
+        XCTAssertEqual(chart.currentPoint, model.historySeries.last)
+    }
+
+    func testRestoredGraphDoesNotMarkIdealGuideOrForecastAsAnObservation() {
+        let now = Date()
+        let model = WeeklyOutlookModel.make(snapshot: ClaudeDashboardFixture.snapshot(now: now), hasError: false, now: now)
+        let estimates = model.series.filter { $0.kind != .observed }
+        let chart = ForecastChartView(series: estimates, accessibilityLabel: "Test", displayDomain: model.domain)
+        XCTAssertNil(chart.currentPoint)
+        XCTAssertEqual(chart.timelineAxisDates.count, 8)
+    }
+
+    func testRestoredGraphDescribesContinuousForecastAndIndependentDashedGuide() {
+        let now = Date()
+        let snapshot = ClaudeDashboardFixture.snapshot(now: now)
+        let model = WeeklyOutlookModel.make(snapshot: snapshot, hasError: false, now: now)
+        let timeline = WeeklyChartTimeline(series: model.series, reset: snapshot.weekly?.resetsAt)
+        let label = timeline.accessibilityLabel(provider: "Codex")
+        XCTAssertTrue(label.contains("Solid red line: estimated, not guaranteed."))
+        XCTAssertTrue(label.contains("Gray dashed line: fixed ideal cycle"))
+        XCTAssertFalse(label.contains("Red dashed"))
+        let flat = WeeklyOutlookModel.make(snapshot: ClaudeDashboardFixture.flatSnapshot(now: now), hasError: false, now: now)
+        XCTAssertEqual(flat.pace, "0.0 pp/day · 0.0 pp/5h")
+    }
+
     private func limit(_ kind: LimitKind, _ id: String, _ percent: Double, now: Date) -> RateLimit {
         .init(kind: kind, limitId: id, remainingPercent: percent, resetsAt: now.addingTimeInterval(86400), observedAt: now)
     }
