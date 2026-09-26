@@ -95,6 +95,45 @@ final class StatusPresentationTests: XCTestCase {
         }
     }
 
+    func testClaudeExpiredFiveHourFallsBackToCurrentWeekly() throws {
+        let five = RateLimit(kind: .fiveHour, limitId: "five", remainingPercent: 3,
+            resetsAt: now, observedAt: now.addingTimeInterval(-60))
+        let week = RateLimit(kind: .weekly, limitId: "week", remainingPercent: 90,
+            resetsAt: now.addingTimeInterval(3 * 86400), observedAt: now)
+        let snapshot = ClaudeUsageSnapshot(provider: .claude, fiveHour: five, weekly: week, freshness: .fresh)
+        let result = StatusPresentation.claude(snapshot: snapshot, enabled: true, hasError: false, now: now)
+        let module = try XCTUnwrap(result.modules.first)
+        XCTAssertEqual(module.remainingPercent, 90)
+        XCTAssertEqual(module.reset, "3d00:00")
+        XCTAssertFalse(module.isStale)
+        XCTAssertTrue(StatusPresentation.claude(snapshot: snapshot, enabled: true, hasError: true, now: now).modules[0].isStale)
+        let stale = ClaudeUsageSnapshot(provider: .claude, fiveHour: five, weekly: week, freshness: .stale)
+        XCTAssertTrue(StatusPresentation.claude(snapshot: stale, enabled: true, hasError: false, now: now).modules[0].isStale)
+    }
+
+    func testClaudeRetainsLastReadingAsStaleWhenNoCurrentWindowExists() throws {
+        let five = RateLimit(kind: .fiveHour, limitId: "five", remainingPercent: 3,
+            resetsAt: now, observedAt: now.addingTimeInterval(-60))
+        let snapshot = ClaudeUsageSnapshot(provider: .claude, fiveHour: five, weekly: nil, freshness: .fresh)
+        let result = StatusPresentation.claude(snapshot: snapshot, enabled: true, hasError: false, now: now)
+        let module = try XCTUnwrap(result.modules.first)
+        XCTAssertEqual(module.remainingPercent, 3)
+        XCTAssertTrue(module.isStale)
+    }
+
+    func testClaudeDoesNotPreferOldOrFutureDatedFiveHourReading() throws {
+        let week = RateLimit(kind: .weekly, limitId: "week", remainingPercent: 90,
+            resetsAt: now.addingTimeInterval(86400), observedAt: now)
+        for offset in [-361.0, 1.0] {
+            let five = RateLimit(kind: .fiveHour, limitId: "five", remainingPercent: 50,
+                resetsAt: now.addingTimeInterval(3600), observedAt: now.addingTimeInterval(offset))
+            let snapshot = ClaudeUsageSnapshot(provider: .claude, fiveHour: five, weekly: week, freshness: .fresh)
+            let result = StatusPresentation.claude(snapshot: snapshot, enabled: true, hasError: false, now: now)
+            XCTAssertEqual(result.modules.first?.remainingPercent, 90)
+            XCTAssertEqual(result.modules.first?.isStale, false)
+        }
+    }
+
     private func makeSnapshot(
         remaining: Double,
         freshness: Freshness,
