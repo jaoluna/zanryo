@@ -49,3 +49,24 @@ No billing/plan inference. Keep 390x590; long content scrolls above controls.
 - Preserve both quota windows, all metrics and the fixed refresh footer. Disable
   projection for missing/stale data. Validate a real-shaped short, flat 97%
   history as well as declining, collecting and stale fixtures.
+
+## Unified dashboard polish, 2026-09-25
+
+João requested Claude's graph at the Codex standard and an updated Codex/Spark
+panel. This extends the selected dashboard direction, not a new brand concept.
+- Both providers use the same quota strip, 100→0 meter and chart controls.
+  A single supplied window gets a full-width horizontal summary; two use equal
+  columns. An optional Spark window is a compact extra row, never an empty column.
+  Missing or expired optional limits are hidden; historical samples remain stored.
+- **Overview** is the default: real observations plus dashed forecast and allowed
+  pace until reset. **History** zooms to the observed span; **Projection** remains
+  available separately. Mark the forecast boundary, never call an estimate observed.
+- Keep 0–100 vertically, actual time horizontally, no synthetic 100% history.
+  Shared line widths, axes, padding and typography; yellow Codex, orange Claude.
+- Counts/resets are never summed. Five-hour data crosses the bridge explicitly;
+  weekly prediction never uses five-hour or Spark consumption.
+- Shared body scrolls above a fixed footer. Current pace, remaining-at-reset,
+  allowed pace and confidence remain readable. Status/low confidence are textual.
+- Native 390×590 QA covers single/two/three limits, no Spark, expired cached Spark,
+  sparse/flat history, estimate, stale/error and missing data, plus both menu themes.
+  No collector cadence, authentication, schema or billing inference changes.
