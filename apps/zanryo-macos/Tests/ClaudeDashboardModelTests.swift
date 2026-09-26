@@ -2,6 +2,31 @@ import XCTest
 @testable import Zanryo
 
 final class ClaudeDashboardModelTests: XCTestCase {
+    func testShortFlatHistoryUsesActualTimeSpanAndKeepsProjectionSeparate() throws {
+        let now = Date()
+        let snapshot = ClaudeDashboardFixture.flatSnapshot(now: now)
+        let model = ClaudeDashboardModel.make(snapshot: snapshot, hasError: false, now: now)
+        XCTAssertEqual(model.historySeries.map(\.remainingPercent), [97, 97])
+        XCTAssertEqual(model.historyDomain, now.addingTimeInterval(-3600)...now)
+        XCTAssertEqual(model.projectionDomain, now...snapshot.weekly!.resetsAt)
+        XCTAssertEqual(model.historyCaption, "1h recorded · no change observed")
+        XCTAssertTrue(model.projectionSeries.allSatisfy { $0.kind != .observed })
+        let budget = model.projectionSeries.filter { $0.kind == .sustainable }
+        XCTAssertEqual(budget.first?.at, now)
+        XCTAssertEqual(budget.first?.remainingPercent, 97)
+        XCTAssertEqual(budget.last?.remainingPercent, 0)
+        XCTAssertTrue(model.explanation.contains("Low confidence"))
+    }
+
+    func testSinglePointHasLegibleDomainWithoutFabricatingEarlierPoints() {
+        let now = Date()
+        let model = ClaudeDashboardModel.make(snapshot: ClaudeDashboardFixture.snapshot(now: now, collecting: true), hasError: false, now: now)
+        XCTAssertEqual(model.historyDomain, now.addingTimeInterval(-3600)...now)
+        XCTAssertEqual(model.historySeries.count, 1)
+        XCTAssertNil(model.projectionDomain)
+        XCTAssertTrue(model.projectionSeries.isEmpty)
+    }
+
     func testEstimatedWeeklyHistoryAndMetricsRemainIndependentOfFiveHour() {
         let now = Date()
         let snapshot = ClaudeDashboardFixture.snapshot(now: now)
@@ -56,6 +81,25 @@ final class ClaudeDashboardModelTests: XCTestCase {
 }
 
 enum ClaudeDashboardFixture {
+    /// Matches the early live shape: one hour of unchanged, already-used quota.
+    static func flatSnapshot(now: Date) -> ClaudeUsageSnapshot {
+        let reset = now.addingTimeInterval(5 * 86400)
+        return ClaudeUsageSnapshot(provider: .claude,
+            fiveHour: .init(kind: .fiveHour, limitId: "claude_five_hour", remainingPercent: 99,
+                            resetsAt: now.addingTimeInterval(14_100), observedAt: now),
+            weekly: .init(kind: .weekly, limitId: "claude_weekly", remainingPercent: 97,
+                          resetsAt: reset, observedAt: now), freshness: .fresh,
+            weeklyForecast: .init(status: .estimated, confidence: .low, consumedPerDay: 0,
+                sustainablePerDay: 19.4, paceDifference: -19.4, estimatedDepletionAt: nil, rateRange: nil,
+                chart: .init(observed: [
+                    .init(at: now.addingTimeInterval(-3600), remainingPercent: 97),
+                    .init(at: now, remainingPercent: 97)],
+                    forecast: [.init(at: now, remainingPercent: 97, uncertainty: .init(low: 97, high: 97)),
+                               .init(at: reset, remainingPercent: 97, uncertainty: .init(low: 97, high: 97))],
+                    sustainable: [.init(at: reset.addingTimeInterval(-7 * 86400), remainingPercent: 100),
+                                  .init(at: reset, remainingPercent: 0)])))
+    }
+
     static func snapshot(now: Date, collecting: Bool = false, stale: Bool = false) -> ClaudeUsageSnapshot {
         let reset = now.addingTimeInterval(5 * 86400)
         let observed = collecting ? [ChartPoint(at: now, remainingPercent: 74)] : [

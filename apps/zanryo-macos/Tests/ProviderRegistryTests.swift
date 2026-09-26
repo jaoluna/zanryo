@@ -4,6 +4,22 @@ import XCTest
 
 @MainActor
 final class ProviderRegistryTests: XCTestCase {
+    func testClockUpdatesClaudeCountdownWithoutCollectionWithOpenAIDisabled() async {
+        let source = ProviderDiscoveryStub([.init(provider: .claude, executablePath: "/fixture/claude")])
+        let registry = ProviderRegistry(discoverer: source, preferences: ProviderPreferences(defaults: makeDefaults()))
+        await registry.discover()
+        let now = Date()
+        let snapshot = ClaudeDashboardFixture.snapshot(now: now)
+        registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
+        registry.refreshClock(now: now)
+        XCTAssertEqual(registry.statusPresentation.modules.first?.reset, "3h")
+        registry.refreshClock(now: now.addingTimeInterval(60))
+        XCTAssertEqual(registry.statusPresentation.modules.first?.reset, "2h59m")
+        XCTAssertEqual(registry.claudeSnapshot, snapshot)
+        XCTAssertFalse(registry.claudeIsRefreshing)
+        XCTAssertFalse(registry.shouldRefreshOpenAI)
+    }
+
     func testClaudeStateNeverReplacesOpenAIAndDisabledProviderCannotRefresh() async {
         let source = ProviderDiscoveryStub([
             ProviderInstallation(provider:.openAI,executablePath:"/codex"),

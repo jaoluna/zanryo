@@ -23,8 +23,8 @@ final class ProviderAppearanceTests: XCTestCase {
             let view = StatusItemContentView(frame: .zero)
             view.appearance = NSAppearance(named: name)
             let presentation = StatusPresentation(modules: [
-                ProviderModule(provider: .openAI, remainingPercent: 26, reset: "5d 3h", resetSpoken: "5 days 3 hours", isStale: false),
-                ProviderModule(provider: .claude, remainingPercent: 100, reset: "3h", resetSpoken: "3 hours", isStale: false),
+                ProviderModule(provider: .openAI, remainingPercent: 26, reset: "≈5d23h", resetSpoken: "5 days 22 hours 55 minutes", isStale: false),
+                ProviderModule(provider: .claude, remainingPercent: 100, reset: "3h55m", resetSpoken: "3 hours 55 minutes", isStale: false),
             ])
             view.update(presentation)
             view.frame.size = view.intrinsicContentSize
@@ -51,15 +51,17 @@ final class ProviderAppearanceTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let now = Date()
-        for state in ["estimated", "collecting", "stale", "unavailable"] {
-            let snapshot = state == "unavailable" ? nil : ClaudeDashboardFixture.snapshot(
+        for state in ["gpt-weekly-long", "estimated", "flat-history", "flat-projection", "projection", "collecting", "stale", "unavailable"] {
+            let snapshot = state.hasPrefix("flat") ? ClaudeDashboardFixture.flatSnapshot(now: now) : state == "unavailable" ? nil : ClaudeDashboardFixture.snapshot(
                 now: now, collecting: state == "collecting", stale: state == "stale")
             let registry = ProviderRegistry(discoverer: StyleDiscovery(), preferences: ProviderPreferences(defaults: defaults))
             await registry.discover()
-            registry.select(.claude)
+            registry.select(state == "gpt-weekly-long" ? .openAI : .claude)
             registry.updateClaude(snapshot: snapshot, error: nil, isRefreshing: false)
-            let store = ZanryoStore(provider: StyleDashboard())
-            let host = NSHostingView(rootView: PopoverView(store: store, registry: registry))
+            let store = ZanryoStore(provider: StyleDashboard(snapshot: state == "gpt-weekly-long" ? Self.longWeeklySnapshot(now: now) : nil))
+            if state == "gpt-weekly-long" { await store.start() }
+            let host = NSHostingView(rootView: PopoverView(store: store, registry: registry,
+                initialClaudeChartMode: state.contains("projection") ? .projection : .history))
             host.frame = NSRect(x: 0, y: 0, width: 390, height: 590)
             host.appearance = NSAppearance(named: .darkAqua)
             let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -83,6 +85,16 @@ final class ProviderAppearanceTests: XCTestCase {
             XCTAssertEqual(host.bounds.height, 590)
         }
     }
+
+    private static func longWeeklySnapshot(now: Date) -> DashboardSnapshot {
+        DashboardSnapshot(quota: .init(
+            weekly: .init(kind: .weekly, limitId: "codex", remainingPercent: 74,
+                          resetsAt: now.addingTimeInterval(518_100), observedAt: now),
+            spark: .init(kind: .fiveHour, limitId: "spark", remainingPercent: 19,
+                         resetsAt: now.addingTimeInterval(9_300), observedAt: now),
+            other: [], freshness: .fresh),
+            forecast: ClaudeDashboardFixture.snapshot(now: now).weeklyForecast!)
+    }
 }
 
 private actor StyleDiscovery: ProviderDiscovering {
@@ -93,8 +105,11 @@ private actor StyleDiscovery: ProviderDiscovering {
 }
 
 private actor StyleDashboard: DashboardProviding {
-    func cached() async throws -> DashboardSnapshot? { nil }
+    let snapshot: DashboardSnapshot?
+    init(snapshot: DashboardSnapshot? = nil) { self.snapshot = snapshot }
+    func cached() async throws -> DashboardSnapshot? { snapshot }
     func refresh() async throws -> DashboardSnapshot {
+        if let snapshot { return snapshot }
         throw DisplayError(code: "fixture", message: "No live collection in visual tests")
     }
 }
