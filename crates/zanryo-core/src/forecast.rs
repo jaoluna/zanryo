@@ -308,10 +308,8 @@ fn chart_observed_points(samples: &[&RateLimit], budget_start: DateTime<Utc>) ->
         .filter(|sample| sample.observed_at >= budget_start)
         .collect();
 
-    let mut points = vec![ChartPoint {
-        at: budget_start,
-        remaining_percent: 100.0,
-    }];
+    // Budget is a reference; observed history must contain real readings only.
+    let mut points = Vec::new();
 
     let Some(first) = visible_samples.first() else {
         return points;

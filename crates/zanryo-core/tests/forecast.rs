@@ -191,7 +191,7 @@ fn chart_observed_series_keeps_transitions_without_repeating_plateaus() {
         .map(|point| point.remaining_percent)
         .collect();
 
-    assert_eq!(observed, vec![100.0, 90.0, 90.0, 82.0, 82.0, 70.0, 70.0]);
+    assert_eq!(observed, vec![90.0, 90.0, 82.0, 82.0, 70.0, 70.0]);
     assert_eq!(
         report.chart.sustainable.first().unwrap().remaining_percent,
         100.0
@@ -203,7 +203,7 @@ fn chart_observed_series_keeps_transitions_without_repeating_plateaus() {
 }
 
 #[test]
-fn chart_observed_series_starts_at_cycle_start_when_first_sample_is_late() {
+fn chart_observed_series_starts_at_real_reading_when_first_sample_is_late() {
     let now = at(9, 0);
     let reset = now + Duration::days(5);
     let budget_start = reset - Duration::days(7);
@@ -215,10 +215,13 @@ fn chart_observed_series_starts_at_cycle_start_when_first_sample_is_late() {
 
     let report = ForecastEngine::calculate(&samples, now);
 
-    assert_eq!(report.chart.observed.first().unwrap().at, budget_start);
+    assert_eq!(
+        report.chart.observed.first().unwrap().at,
+        samples[0].observed_at
+    );
     assert_eq!(
         report.chart.observed.first().unwrap().remaining_percent,
-        100.0
+        94.0
     );
 }
 
@@ -236,10 +239,13 @@ fn chart_observed_series_clips_reset_jitter_before_cycle_start() {
 
     let report = ForecastEngine::calculate(&samples, now);
 
-    assert_eq!(report.chart.observed.first().unwrap().at, budget_start);
+    assert_eq!(
+        report.chart.observed.first().unwrap().at,
+        samples[1].observed_at
+    );
     assert_eq!(
         report.chart.observed.first().unwrap().remaining_percent,
-        100.0
+        96.0
     );
     assert!(
         report
@@ -255,7 +261,7 @@ fn chart_observed_series_clips_reset_jitter_before_cycle_start() {
             .iter()
             .map(|point| point.remaining_percent)
             .collect::<Vec<_>>(),
-        vec![100.0, 96.0, 96.0, 92.0]
+        vec![96.0, 96.0, 92.0]
     );
 }
 
