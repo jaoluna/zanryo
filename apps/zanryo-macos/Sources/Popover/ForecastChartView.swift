@@ -88,17 +88,8 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Budget pace"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round, dash: [4, 5])
+                        StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round, dash: [4, 5])
                     )
-                }
-
-                if let currentPoint {
-                    PointMark(
-                        x: .value("Time", currentPoint.at),
-                        y: .value("Remaining", currentPoint.remainingPercent)
-                    )
-                    .symbolSize(32)
-                    .foregroundStyle(by: .value("Series", "Observed"))
                 }
 
                 ForEach(observed, id: \.at) { point in
@@ -109,17 +100,8 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Observed"))
                     .interpolationMethod(.monotone)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round)
+                        StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                     )
-
-                    if point.at == observed.last?.at {
-                        PointMark(
-                            x: .value("Time", point.at),
-                            y: .value("Remaining", point.remainingPercent)
-                        )
-                        .symbolSize(26)
-                        .foregroundStyle(by: .value("Series", "Observed"))
-                    }
                 }
 
                 ForEach(forecast, id: \.at) { point in
@@ -130,7 +112,7 @@ struct ForecastChartView: View {
                     .foregroundStyle(by: .value("Series", "Depletion"))
                     .interpolationMethod(.linear)
                     .lineStyle(
-                        StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
+                        StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
                     )
                 }
 
@@ -143,9 +125,19 @@ struct ForecastChartView: View {
                     .symbolSize(22)
                     .foregroundStyle(by: .value("Series", "Depletion"))
                 }
+
+                // A single marker, above both curves, avoids an overdrawn join.
+                if let currentPoint {
+                    PointMark(
+                        x: .value("Time", currentPoint.at),
+                        y: .value("Remaining", currentPoint.remainingPercent)
+                    )
+                    .symbolSize(24)
+                    .foregroundStyle(by: .value("Series", "Observed"))
+                }
             }
-            .chartYScale(domain: 0 ... 100)
-            .chartXScale(domain: timelineDomain)
+            .chartYScale(domain: 0 ... 100, range: .plotDimension(padding: 3))
+            .chartXScale(domain: timelineDomain, range: .plotDimension(padding: 3))
             .chartForegroundStyleScale([
                 "Observed": observedColor,
                 "Depletion": PopoverColor.chartDepletion,
