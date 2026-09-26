@@ -37,15 +37,14 @@ No billing/plan inference. Keep 390x590; long content scrolls above controls.
 - Reset countdowns share one elapsed-time formatter. Include minutes instead of
   dropping up to 59 minutes; round up only the final partial minute. Absolute
   resets use the system's local time, never a manually added hour.
-  The menu bar removes spacing between time units; for weekly windows it rounds
-  UP to the next hour with an explicit approximation mark. Full minutes remain
-  in the panel and accessibility/tooltip. Keep the two provider modules compact.
+  The menu bar uses days + HH:MM (5d23:55) for multi-day windows, without an
+  approximation prefix or whole-hour rounding. Short windows retain h/m units.
+  Full units remain in the panel and accessibility/tooltip.
 - Claude defaults to **History**: orange observations only, on their actual time
   span (minimum one hour), with the unchanged 0–100% vertical scale. Flat recent
   readings must remain flat; do not amplify tiny changes or invent older data.
-- **Projection** is a separate selectable view. Red estimates are dashed; gray
-  budget starts at the same estimated current balance and goes to zero at reset,
-  never at an invented historical 100%. Label low-confidence projections.
+- The historical separate Projection tab and current-balance gray budget were
+  superseded by João's single-chart and fixed ideal-cycle corrections below.
 - Preserve both quota windows, all metrics and the fixed refresh footer. Disable
   projection for missing/stale data. Validate a real-shaped short, flat 97%
   history as well as declining, collecting and stale fixtures.
@@ -59,16 +58,87 @@ panel. This extends the selected dashboard direction, not a new brand concept.
   columns. An optional Spark window is a compact extra row, never an empty column.
   Missing or expired optional limits are hidden; historical samples remain stored.
 - **Single weekly chart**, per João's final correction: no Overview, History or
-  Projection tabs. Show real observations plus dashed forecast and allowed pace
-  until reset together, with a visible forecast boundary and confidence. Without
-  a valid forecast, show only recorded history. Never call an estimate observed.
+  Projection tabs. Show real observations, dashed forecast and a fixed gray
+  ideal-cycle guide, with a visible forecast boundary and confidence. The guide
+  runs from 100% at reset minus seven days to 0% at reset, independently of the
+  current balance or forecast availability. It is not observed usage. Stale data
+  keeps the saved cycle guide/history but never a current projection.
   João approved the rest of the panel; preserve its layout, colors and controls.
 - Keep 0–100 vertically, actual time horizontally, no synthetic 100% history.
   Shared line widths, axes, padding and typography; yellow Codex, orange Claude.
 - Counts/resets are never summed. Five-hour data crosses the bridge explicitly;
   weekly prediction never uses five-hour or Spark consumption.
 - Shared body scrolls above a fixed footer. Current pace, remaining-at-reset,
-  allowed pace and confidence remain readable. Status/low confidence are textual.
+  available-per-day budget and confidence remain readable. The current budget
+  is distinct from the gray ideal-cycle reference. Low confidence is textual.
 - Native 390×590 QA covers single/two/three limits, no Spark, expired cached Spark,
   sparse/flat history, estimate, stale/error and missing data, plus both menu themes.
   No collector cadence, authentication, schema or billing inference changes.
+
+## Personal-plan design study and next data layer, 2026-09-25
+
+The test-only `PlanDesignPreview` renders eight named personal-plan states:
+Codex Free, Go, Plus, Pro 5x/20x; Claude Pro, Max 5x/20x. All balances and
+windows are explicitly simulated. These fixtures do not ship in the app,
+persist samples, infer billing tiers or change live account settings.
+
+- One chart per provider, unchanged provider accents. The candidate panel is
+  390x640 to accommodate a model-specific row and one optional value row;
+  the installed panel remains 390x590. No additional navigation tabs.
+- The live payload, not the plan name, must decide which windows appear.
+  OpenAI `pro` alone does not distinguish 5x from 20x. Unknown stays unknown.
+  Plus/Free/Go demo windows are illustrative, not a promise about every account.
+- Fable on Max is a sublimit sharing the weekly allowance, not an extra bucket.
+  Display remaining percentage of the Fable cap separately, explain the shared
+  allowance, and never sum it with weekly remaining. Pro uses paid usage credits.
+  No Fable percentage is installed until a supported live field is captured and
+  its denominator/reset semantics are proven. The existing collector only
+  supplies five-hour and aggregate-weekly limits.
+- Spark remains conditional on a fresh explicit source field, not a plan badge.
+- API-equivalent value gets one compact optional row with details on demand.
+  Missing measurement is not $0. It is a retail API comparison for captured
+  usage, not a bill, provider cost, actual subsidy or complete account value.
+
+### Collection proposal (researched, not enabled)
+
+Claude Code 2.1.282 is installed. The official statusline JSON (2.1.251+) can
+supply `rate_limits.five_hour`/`seven_day` after an API response, together with
+`cost.total_cost_usd`. Observe existing CLI events without launching another
+Claude or requesting model work. An opt-in adapter must compose with, not
+replace, the user's current statusline and preserve its stdout/exit behavior.
+An atomic allowlisted payload can then be consumed through the Rust bridge.
+
+Keep the current serialized `/usage` probe as manual/fallback collection:
+statusline events originate in Claude Code, not Desktop. A timer replay of
+cached JSON is not a new server observation. Reject future/out-of-order events,
+expired windows, invalid percentages and gateway-only spend fields; do not
+turn absent windows into zeros. Fresh event data can suppress the heavier
+probe; no recent event means the current conservative fallback still runs.
+
+Before activation: measure CPU/RSS/startups against the current five-minute
+baseline; test absent/null fields, 100-used normalization, reset rollover,
+duplicate/replayed events, concurrent sessions, existing statusline composition
+and Desktop-only usage. Provider-only history currently cannot isolate accounts;
+resolve identity/epoch separation before adding multi-account ingestion.
+
+### API-equivalent measurement (not implemented)
+
+Use actual per-request model/token records, not a conversion from quota percent.
+Version rate cards and split uncached input, cache reads, cache writes and output;
+respect long-context and speed tiers, and avoid double-counting cached input or
+reasoning output. Unknown models/tiers stay unpriced with coverage shown.
+For Claude, the official session cost is already a client-side estimate: do not
+sum cumulative snapshots. Repeated delivery, resume, clear and session forks
+need explicit deduplication. Local session coverage excludes other devices and
+uncaptured app chats. Compare to the user's actual paid subscription over a
+matching billing period, only after reliable coverage exists. No retroactive
+full-rollout rescans on every refresh; incremental offsets and bounded I/O.
+
+Official sources checked 2026-09-25:
+- https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan
+- https://learn.chatgpt.com/docs/pricing
+- https://developers.openai.com/api/docs/pricing
+- https://support.claude.com/en/articles/11049741-what-is-the-max-plan
+- https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan
+- https://code.claude.com/docs/en/statusline
+- https://code.claude.com/docs/en/costs
