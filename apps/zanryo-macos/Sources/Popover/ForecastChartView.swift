@@ -30,6 +30,12 @@ struct ForecastChartView: View {
         }
 
         let calendar = Calendar.current
+        if range.end.timeIntervalSince(range.start) <= 6 * 3600 {
+            var dates = stride(from: range.start.timeIntervalSince1970,
+                               to: range.end.timeIntervalSince1970, by: 3600).map(Date.init(timeIntervalSince1970:))
+            dates.append(range.end)
+            return dates
+        }
         let totalDays = max(
             1,
             Int(ceil(range.end.timeIntervalSince(range.start) / 86_400))
@@ -246,7 +252,9 @@ struct ForecastChartView: View {
         timeFormatter.timeZone = .current
         timeFormatter.dateFormat = "HH:mm"
 
-        return "\(dayFormatter.string(from: date).uppercased())\n\(timeFormatter.string(from: date))"
+        return isEndpointDate(date)
+            ? "\(dayFormatter.string(from: date).uppercased())\n\(timeFormatter.string(from: date))"
+            : timeFormatter.string(from: date)
     }
 
     private func isEndpointDate(_ date: Date) -> Bool {

@@ -3,12 +3,14 @@ import SwiftUI
 struct WeeklyChartTimeline {
     let series: [PopoverForecastPoint]
     let reset: Date?
+    var window: QuotaChartWindow = .weekly
 
     var observed: [PopoverForecastPoint] { series.filter { $0.kind == .observed }.sorted { $0.at < $1.at } }
     var hasProjection: Bool { series.contains { $0.kind == .forecast } }
     var boundary: Date? { series.filter { $0.kind == .forecast }.map(\.at).min() }
 
     var domain: ClosedRange<Date>? {
+        if window == .fiveHour, let reset { return reset.addingTimeInterval(-window.duration)...reset }
         guard let first = series.map(\.at).min(), let last = series.map(\.at).max() else { return nil }
         let end = hasProjection ? max(last, reset ?? last) : last
         return min(first, end.addingTimeInterval(-3600))...end
@@ -27,7 +29,7 @@ struct WeeklyChartTimeline {
 
     func accessibilityLabel(provider: String) -> String {
         let kinds = Set(series.map(\.kind))
-        var parts = ["\(provider) weekly remaining quota."]
+        var parts = ["\(provider) \(window.spokenTitle) remaining quota."]
         if kinds.contains(.observed) { parts += [historyCaption, "Solid line: observed."] }
         if kinds.contains(.forecast) { parts.append("Solid red line: estimated, not guaranteed.") }
         if kinds.contains(.sustainable) { parts.append("Gray dashed line: fixed ideal cycle, 100 percent at cycle start to zero at reset, not observed usage.") }
@@ -41,13 +43,35 @@ struct WeeklyChartView: View {
     let pace: String
     let accent: Color
     let provider: String
+    var availableWindows: [QuotaChartWindow] = [.weekly]
+    var selection: Binding<QuotaChartWindow> = .constant(.weekly)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("WEEKLY FORECAST")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(accent)
+                if availableWindows.count > 1 {
+                    HStack(spacing: 10) {
+                        ForEach(availableWindows, id: \.self) { window in
+                            Button { selection.wrappedValue = window } label: {
+                                Text(window.title)
+                                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(window == timeline.window ? accent : PopoverColor.secondaryForeground)
+                                    .padding(.vertical, 6)
+                                    .overlay(alignment: .bottom) {
+                                        if window == timeline.window { Capsule().fill(accent).frame(height: 2) }
+                                    }
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                                .accessibilityLabel("\(window.spokenTitle) quota chart")
+                                .accessibilityAddTraits(window == timeline.window ? .isSelected : [])
+                                .help("Show the current \(window.spokenTitle) cycle")
+                        }
+                    }
+                } else {
+                    Text(timeline.window.forecastTitle)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(accent)
+                }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("CURRENT PACE")
@@ -61,7 +85,7 @@ struct WeeklyChartView: View {
                 }.frame(maxWidth: 178, alignment: .trailing)
             }
             if timeline.series.isEmpty {
-                Text("Weekly history will appear after the first reading.")
+                Text("\(timeline.window.title) history will appear after the first reading.")
                     .font(.caption).foregroundStyle(PopoverColor.secondaryForeground)
                     .frame(maxWidth: .infinity, minHeight: 154, alignment: .center)
             } else {

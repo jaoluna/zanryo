@@ -4,6 +4,7 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var store: ZanryoStore
     @ObservedObject var registry: ProviderRegistry
+    @State var codexChartWindow: QuotaChartWindow = .weekly
 
     private var model: PopoverDashboardModel {
         PopoverDashboardModel.make(
@@ -181,8 +182,9 @@ struct PopoverView: View {
                         windows: codexWindows, accent: PopoverColor.accent,
                         emptyText: store.isRefreshing ? "Reading Codex usage…" : "Codex usage unavailable")
                     divider
-                    WeeklyChartView(timeline: .init(series: codexOutlook.series, reset: store.snapshot?.quota.weekly.resetsAt),
-                        pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex")
+                    WeeklyChartView(timeline: .init(series: codexOutlook.series, reset: codexChartLimit?.resetsAt, window: activeCodexWindow),
+                        pace: codexOutlook.pace, accent: PopoverColor.accent, provider: "Codex",
+                        availableWindows: codexChartWindows, selection: $codexChartWindow)
                     divider
                     OutlookMetricsView(rows: codexOutlook.rows, explanation: codexOutlook.explanation)
                 }
@@ -194,8 +196,22 @@ struct PopoverView: View {
 
     private var codexOutlook: WeeklyOutlookModel {
         let snapshot = store.snapshot
-        return .make(weekly: snapshot?.quota.weekly, report: snapshot?.forecast,
-                     isStale: store.lastError != nil || snapshot?.quota.isStale() == true)
+        let limit = codexChartLimit
+        let now = Date()
+        let stale = store.lastError != nil || snapshot?.quota.freshness == .stale || limit.map {
+            now.timeIntervalSince($0.observedAt) > 360 || $0.observedAt > now || $0.resetsAt <= now
+        } == true
+        return .make(weekly: limit,
+                     report: activeCodexWindow == .fiveHour ? snapshot?.fiveHourForecast : snapshot?.forecast,
+                     isStale: stale, window: activeCodexWindow)
+    }
+
+    private var codexChartWindows: [QuotaChartWindow] {
+        QuotaChartWindow.available(fiveHour: store.snapshot?.quota.currentFiveHour(now: Date()), weekly: store.snapshot?.quota.weekly)
+    }
+    private var activeCodexWindow: QuotaChartWindow { codexChartWindow.resolved(in: codexChartWindows) }
+    private var codexChartLimit: RateLimit? {
+        activeCodexWindow == .fiveHour ? store.snapshot?.quota.currentFiveHour(now: Date()) : store.snapshot?.quota.weekly
     }
 
     private var codexWindows: [QuotaStripView.Window] {

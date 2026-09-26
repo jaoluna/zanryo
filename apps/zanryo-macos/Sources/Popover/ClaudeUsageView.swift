@@ -3,8 +3,16 @@ import SwiftUI
 
 struct ClaudeUsageView: View {
     @ObservedObject var registry: ProviderRegistry
+    @State var chartWindow: QuotaChartWindow = .weekly
+    private var chartWindows: [QuotaChartWindow] {
+        QuotaChartWindow.available(fiveHour: registry.claudeSnapshot?.fiveHour, weekly: registry.claudeSnapshot?.weekly)
+    }
+    private var activeWindow: QuotaChartWindow { chartWindow.resolved(in: chartWindows) }
+    private var chartLimit: RateLimit? {
+        activeWindow == .fiveHour ? registry.claudeSnapshot?.fiveHour : registry.claudeSnapshot?.weekly
+    }
     private var model: WeeklyOutlookModel {
-        .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil)
+        .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil, window: activeWindow)
     }
 
     var body: some View {
@@ -14,8 +22,9 @@ struct ClaudeUsageView: View {
                     QuotaStripView(provider: "Claude", windows: windows, accent: PopoverColor.claudeAccent,
                         emptyText: registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
                     divider
-                    WeeklyChartView(timeline: .init(series: model.series, reset: registry.claudeSnapshot?.weekly?.resetsAt),
-                        pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude")
+                    WeeklyChartView(timeline: .init(series: model.series, reset: chartLimit?.resetsAt, window: activeWindow),
+                        pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude",
+                        availableWindows: chartWindows, selection: $chartWindow)
                     divider
                     OutlookMetricsView(rows: model.rows, explanation: model.explanation)
                     if let error = registry.claudeError {

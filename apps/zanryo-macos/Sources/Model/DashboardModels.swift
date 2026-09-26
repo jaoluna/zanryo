@@ -154,14 +154,17 @@ struct DashboardSnapshot: Decodable, Equatable, Sendable {
     let quota: QuotaSnapshot
     let forecast: ForecastReport
     let account: AccountContext?
+    let fiveHourForecast: ForecastReport?
 
     init(
         quota: QuotaSnapshot,
         forecast: ForecastReport,
-        account: AccountContext? = nil
+        account: AccountContext? = nil,
+        fiveHourForecast: ForecastReport? = nil
     ) {
         self.quota = quota
         self.forecast = forecast
         self.account = account
+        self.fiveHourForecast = fiveHourForecast
     }
 }

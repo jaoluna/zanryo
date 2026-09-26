@@ -8,14 +8,16 @@ struct ClaudeUsageSnapshot: Decodable, Equatable, Sendable {
     let weekly: RateLimit?
     let freshness: Freshness
     let weeklyForecast: ForecastReport?
+    let fiveHourForecast: ForecastReport?
 
     init(provider: ProviderId, fiveHour: RateLimit?, weekly: RateLimit?, freshness: Freshness,
-         weeklyForecast: ForecastReport? = nil) {
+         weeklyForecast: ForecastReport? = nil, fiveHourForecast: ForecastReport? = nil) {
         self.provider = provider
         self.fiveHour = fiveHour
         self.weekly = weekly
         self.freshness = freshness
         self.weeklyForecast = weeklyForecast
+        self.fiveHourForecast = fiveHourForecast
     }
 
     var preferredLimit: RateLimit? { fiveHour ?? weekly }
