@@ -28,6 +28,7 @@ pub fn decode_usage_screen(screen: &str, observed: DateTime<Utc>) -> Result<Vec<
             LimitKind::Weekly,
             "claude_weekly",
         ),
+        ("Current week (Fable)", LimitKind::Fable, "claude_fable"),
     ] {
         let positions: Vec<_> = lines
             .iter()
@@ -118,7 +119,7 @@ fn parse_reset(line: &str, kind: &LimitKind, observed: DateTime<Utc>) -> Result<
         NaiveTime::from_hms_opt(hour % 12 + if pm { 12 } else { 0 }, minute, 0).ok_or_else(invalid)
     };
     let candidates = if let Some((month_day, time)) = clock.split_once(" at ") {
-        if *kind != LimitKind::Weekly {
+        if !matches!(kind, LimitKind::Weekly | LimitKind::Fable) {
             return Err(invalid());
         }
         let time = time_of(time)?;
@@ -282,6 +283,22 @@ mod tests {
             1
         );
         assert!(decode_usage_screen(&frame("", ""), now()).is_err());
+    }
+    #[test]
+    fn fable_is_a_separate_optional_weekly_window() {
+        let fable = "Current week (Fable)\n18% used\nResets Sep 29 at 8pm (America/Sao_Paulo)\n";
+        let limits =
+            decode_usage_screen(&frame(&session("34% used"), &(week() + fable)), now()).unwrap();
+        assert_eq!(limits.len(), 3);
+        assert_eq!(limits[2].kind, LimitKind::Fable);
+        assert_eq!(limits[2].limit_id, "claude_fable");
+        assert_eq!(limits[2].remaining_percent, 82.0);
+        assert_ne!(limits[1].resets_at, limits[2].resets_at);
+        let only = decode_usage_screen(&frame("", fable), now()).unwrap();
+        assert_eq!(only.len(), 1);
+        assert_eq!(only[0].kind, LimitKind::Fable);
+        assert!(decode_usage_screen(&frame("", &(fable.to_owned() + fable)), now()).is_err());
+        assert!(decode_usage_screen(&frame("", &fable.replace("18%", "101%")), now()).is_err());
     }
     #[test]
     fn bounds_invalid_and_conflicting_percentages_fail_closed() {

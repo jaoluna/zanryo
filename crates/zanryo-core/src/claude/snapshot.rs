@@ -13,8 +13,10 @@ pub struct ClaudeUsageSnapshot {
     pub provider: ProviderId,
     pub five_hour: Option<RateLimit>,
     pub weekly: Option<RateLimit>,
+    pub fable: Option<RateLimit>,
     pub weekly_forecast: Option<ForecastReport>,
     pub five_hour_forecast: Option<ForecastReport>,
+    pub fable_forecast: Option<ForecastReport>,
     pub freshness: Freshness,
 }
 
@@ -23,11 +25,17 @@ impl ClaudeUsageSnapshot {
         if limits.is_empty()
             || limits.iter().any(|limit| {
                 limit.provider != ProviderId::Claude
-                    || ![LimitKind::FiveHour, LimitKind::Weekly].contains(&limit.kind)
+                    || ![LimitKind::FiveHour, LimitKind::Weekly, LimitKind::Fable]
+                        .contains(&limit.kind)
             })
             || limits
                 .iter()
                 .filter(|limit| limit.kind == LimitKind::FiveHour)
+                .count()
+                > 1
+            || limits
+                .iter()
+                .filter(|limit| limit.kind == LimitKind::Fable)
                 .count()
                 > 1
             || limits
@@ -50,6 +58,11 @@ impl ClaudeUsageSnapshot {
                 .cloned(),
             weekly_forecast: None,
             five_hour_forecast: None,
+            fable: limits
+                .iter()
+                .find(|limit| limit.kind == LimitKind::Fable)
+                .cloned(),
+            fable_forecast: None,
             freshness,
         })
     }
@@ -63,6 +76,8 @@ impl ClaudeUsageSnapshot {
                 forecast_from_history(history, snapshot.weekly.as_ref(), chrono::Utc::now())?;
             snapshot.five_hour_forecast =
                 forecast_from_history(history, snapshot.five_hour.as_ref(), chrono::Utc::now())?;
+            snapshot.fable_forecast =
+                forecast_from_history(history, snapshot.fable.as_ref(), chrono::Utc::now())?;
             Ok(Some(snapshot))
         }
     }
@@ -73,6 +88,8 @@ impl ClaudeUsageSnapshot {
             forecast_from_history(history, snapshot.weekly.as_ref(), chrono::Utc::now())?;
         snapshot.five_hour_forecast =
             forecast_from_history(history, snapshot.five_hour.as_ref(), chrono::Utc::now())?;
+        snapshot.fable_forecast =
+            forecast_from_history(history, snapshot.fable.as_ref(), chrono::Utc::now())?;
         Ok(snapshot)
     }
 }
@@ -114,6 +131,8 @@ fn forecast_from_history(
         .collect();
     let mut forecast = if weekly.kind == LimitKind::FiveHour {
         ForecastEngine::calculate_five_hour(&cycle_samples, now)
+    } else if weekly.kind == LimitKind::Fable {
+        ForecastEngine::calculate_fable(&cycle_samples, now)
     } else {
         ForecastEngine::calculate(&cycle_samples, now)
     };
@@ -197,6 +216,80 @@ mod tests {
             history.latest_limits(ProviderId::OpenAi).unwrap(),
             vec![openai]
         );
+    }
+    #[test]
+    fn fable_history_is_separate_from_all_models_and_absence_stays_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = HistoryRepository::open(dir.path().join("history.sqlite3")).unwrap();
+        let now = chrono::Utc::now();
+        let reset = now + chrono::Duration::days(3);
+        for (minutes, weekly, fable) in [(40, 95.0, 70.0), (20, 94.0, 60.0), (0, 93.0, 50.0)] {
+            ClaudeUsageSnapshot::record(
+                &history,
+                vec![
+                    make(
+                        ProviderId::Claude,
+                        LimitKind::Weekly,
+                        "claude_weekly",
+                        weekly,
+                        reset,
+                        now - chrono::Duration::minutes(minutes),
+                    ),
+                    make(
+                        ProviderId::Claude,
+                        LimitKind::Fable,
+                        "claude_fable",
+                        fable,
+                        reset,
+                        now - chrono::Duration::minutes(minutes),
+                    ),
+                ],
+            )
+            .unwrap();
+        }
+        let cached = ClaudeUsageSnapshot::cached(&history).unwrap().unwrap();
+        assert_eq!(cached.fable.as_ref().unwrap().remaining_percent, 50.0);
+        assert_eq!(
+            cached
+                .fable_forecast
+                .unwrap()
+                .chart
+                .observed
+                .iter()
+                .map(|point| point.remaining_percent)
+                .collect::<Vec<_>>(),
+            vec![70.0, 60.0, 50.0]
+        );
+        assert_eq!(
+            cached
+                .weekly_forecast
+                .unwrap()
+                .chart
+                .observed
+                .iter()
+                .map(|point| point.remaining_percent)
+                .collect::<Vec<_>>(),
+            vec![95.0, 94.0, 93.0]
+        );
+        let fable = cached.fable.unwrap();
+        assert!(
+            ClaudeUsageSnapshot::from_limits(vec![fable.clone(), fable], Freshness::Fresh).is_err()
+        );
+        ClaudeUsageSnapshot::record(
+            &history,
+            vec![make(
+                ProviderId::Claude,
+                LimitKind::Weekly,
+                "claude_weekly",
+                92.0,
+                reset,
+                now + chrono::Duration::seconds(1),
+            )],
+        )
+        .unwrap();
+        let next = ClaudeUsageSnapshot::cached(&history).unwrap().unwrap();
+        assert!(next.fable.is_none());
+        assert!(next.fable_forecast.is_none());
     }
     #[test]
     fn rejects_empty_foreign_or_duplicate_limits_before_persisting() {

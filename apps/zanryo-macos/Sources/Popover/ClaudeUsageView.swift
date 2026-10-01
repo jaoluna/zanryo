@@ -5,11 +5,12 @@ struct ClaudeUsageView: View {
     @ObservedObject var registry: ProviderRegistry
     @State var chartWindow: QuotaChartWindow = .weekly
     private var chartWindows: [QuotaChartWindow] {
-        QuotaChartWindow.available(fiveHour: registry.claudeSnapshot?.fiveHour, weekly: registry.claudeSnapshot?.weekly)
+        QuotaChartWindow.available(fiveHour: registry.claudeSnapshot?.fiveHour, weekly: registry.claudeSnapshot?.weekly,
+            fable: registry.claudeSnapshot?.fable)
     }
     private var activeWindow: QuotaChartWindow { chartWindow.resolved(in: chartWindows) }
     private var chartLimit: RateLimit? {
-        activeWindow == .fiveHour ? registry.claudeSnapshot?.fiveHour : registry.claudeSnapshot?.weekly
+        registry.claudeSnapshot?.limit(for: activeWindow)
     }
     private var model: WeeklyOutlookModel {
         .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil, window: activeWindow)
@@ -21,6 +22,11 @@ struct ClaudeUsageView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     QuotaStripView(provider: "Claude", windows: windows, accent: PopoverColor.claudeAccent,
                         emptyText: registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
+                    if registry.claudeSnapshot?.fable != nil {
+                        Text("Fable also counts toward Weekly. Limits are not added.")
+                            .font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
                     divider
                     WeeklyChartView(timeline: .init(series: model.series, reset: chartLimit?.resetsAt, window: activeWindow),
                         pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude",

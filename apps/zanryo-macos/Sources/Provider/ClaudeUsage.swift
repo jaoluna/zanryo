@@ -6,22 +6,41 @@ struct ClaudeUsageSnapshot: Decodable, Equatable, Sendable {
     let provider: ProviderId
     let fiveHour: RateLimit?
     let weekly: RateLimit?
+    let fable: RateLimit?
     let freshness: Freshness
     let weeklyForecast: ForecastReport?
     let fiveHourForecast: ForecastReport?
+    let fableForecast: ForecastReport?
 
     init(provider: ProviderId, fiveHour: RateLimit?, weekly: RateLimit?, freshness: Freshness,
-         weeklyForecast: ForecastReport? = nil, fiveHourForecast: ForecastReport? = nil) {
+         weeklyForecast: ForecastReport? = nil, fiveHourForecast: ForecastReport? = nil,
+         fable: RateLimit? = nil, fableForecast: ForecastReport? = nil) {
         self.provider = provider
         self.fiveHour = fiveHour
         self.weekly = weekly
         self.freshness = freshness
         self.weeklyForecast = weeklyForecast
         self.fiveHourForecast = fiveHourForecast
+        self.fable = fable
+        self.fableForecast = fableForecast
     }
 
-    var preferredLimit: RateLimit? { fiveHour ?? weekly }
-    var windows: [RateLimit] { [fiveHour, weekly].compactMap { $0 } }
+    var preferredLimit: RateLimit? { fiveHour ?? weekly ?? fable }
+    var windows: [RateLimit] { [fiveHour, weekly, fable].compactMap { $0 } }
+    func limit(for window: QuotaChartWindow) -> RateLimit? {
+        switch window {
+        case .fiveHour: fiveHour
+        case .weekly: weekly
+        case .fable: fable
+        }
+    }
+    func forecast(for window: QuotaChartWindow) -> ForecastReport? {
+        switch window {
+        case .fiveHour: fiveHourForecast
+        case .weekly: weeklyForecast
+        case .fable: fableForecast
+        }
+    }
     func currentPreferredLimit(at now: Date) -> RateLimit? {
         windows.first { !windowIsStale($0, at: now) } ?? preferredLimit
     }

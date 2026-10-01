@@ -2,6 +2,24 @@ import XCTest
 @testable import Zanryo
 
 final class ClaudeUsageDecoderTests: XCTestCase {
+    func testFableDecodesSeparatelyAndRejectsWrongKind() throws {
+        var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: payload(five: 66, weekly: 97)) as? [String: Any])
+        var data = try XCTUnwrap(envelope["data"] as? [String: Any])
+        var fable: [String: Any] = ["kind": "fable", "limit_id": "claude_fable", "remaining_percent": 42,
+            "resets_at": "2026-09-30T21:00:00Z", "observed_at": "2026-09-25T20:40:00Z"]
+        data["fable"] = fable
+        envelope["data"] = data
+        let snapshot = try XCTUnwrap(BridgeDecoder.decodeClaudeUsage(from: JSONSerialization.data(withJSONObject: envelope)))
+        XCTAssertEqual(snapshot.fable?.remainingPercent, 42)
+        XCTAssertEqual(snapshot.weekly?.remainingPercent, 97)
+        XCTAssertEqual(snapshot.windows.count, 3)
+        XCTAssertEqual(snapshot.preferredLimit?.remainingPercent, 66)
+        fable["kind"] = "weekly"
+        data["fable"] = fable
+        envelope["data"] = data
+        XCTAssertThrowsError(try BridgeDecoder.decodeClaudeUsage(from: JSONSerialization.data(withJSONObject: envelope)))
+        XCTAssertNil(try BridgeDecoder.decodeClaudeUsage(from: payload(five: 66, weekly: 97))?.fable)
+    }
     func testAdditiveWeeklyForecastDecodesAndLegacyPayloadStaysValid() throws {
         let legacy = payload(five: 66, weekly: 97)
         XCTAssertNil(try BridgeDecoder.decodeClaudeUsage(from: legacy)?.weeklyForecast)

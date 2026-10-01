@@ -78,6 +78,10 @@ impl ForecastEngine {
         Self::calculate_window(samples, now, LimitKind::FiveHour)
     }
 
+    pub fn calculate_fable(samples: &[RateLimit], now: DateTime<Utc>) -> ForecastReport {
+        Self::calculate_window(samples, now, LimitKind::Fable)
+    }
+
     fn calculate_window(
         samples: &[RateLimit],
         now: DateTime<Utc>,
@@ -216,7 +220,9 @@ fn current_cycle(samples: &[RateLimit], kind: LimitKind, now: DateTime<Utc>) -> 
     let Some(latest) = samples
         .iter()
         .filter(|sample| sample.kind == kind)
-        .filter(|sample| kind != LimitKind::FiveHour || sample.observed_at <= now)
+        .filter(|sample| {
+            !matches!(kind, LimitKind::FiveHour | LimitKind::Fable) || sample.observed_at <= now
+        })
         .max_by_key(|sample| sample.observed_at)
     else {
         return Vec::new();
@@ -225,7 +231,9 @@ fn current_cycle(samples: &[RateLimit], kind: LimitKind, now: DateTime<Utc>) -> 
     let mut cycle: Vec<_> = samples
         .iter()
         .filter(|sample| sample.kind == kind)
-        .filter(|sample| kind != LimitKind::FiveHour || sample.observed_at <= now)
+        .filter(|sample| {
+            !matches!(kind, LimitKind::FiveHour | LimitKind::Fable) || sample.observed_at <= now
+        })
         .filter(|sample| (sample.resets_at - latest.resets_at).num_seconds().abs() <= 5 * 60)
         .filter(|sample| {
             kind != LimitKind::FiveHour
