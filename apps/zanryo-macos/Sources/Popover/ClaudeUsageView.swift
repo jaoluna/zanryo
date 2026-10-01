@@ -50,13 +50,14 @@ struct ClaudeUsageView: View {
         var result: [QuotaStripView.Window] = []
         if let limit = registry.claudeSnapshot?.fiveHour { result.append(.init(title: "5 hours", limit: limit)) }
         if let limit = registry.claudeSnapshot?.weekly { result.append(.init(title: "Weekly", limit: limit)) }
+        if let limit = registry.claudeSnapshot?.fable { result.append(.init(title: "Fable weekly", limit: limit)) }
         return result
     }
 
     private var footer: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Claude Code /usage · every 5 min")
+                Text("Claude Code /usage · 2 min · retry 5 min")
                 if let date = registry.claudeSnapshot?.preferredLimit?.observedAt {
                     Text("\(model.isStale ? "Saved" : "Read") \(date.formatted(date: .omitted, time: .standard))")
                 }

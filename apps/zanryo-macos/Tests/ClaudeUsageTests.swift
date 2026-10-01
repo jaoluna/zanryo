@@ -97,6 +97,28 @@ final class ClaudeUsageStoreTests: XCTestCase {
         XCTAssertEqual(forced,2)
         XCTAssertEqual(store.snapshot?.fiveHour?.remainingPercent,66)
     }
+    func testHealthyPollingUsesTwoMinutesButFailureBackoffKeepsFive() async {
+        let source = ClaudeUsageStub()
+        let store = ClaudeUsageStore(source: source)
+        let now = Date()
+        await store.refresh(now: now)
+        await store.refresh(now: now.addingTimeInterval(119))
+        var calls = await source.calls
+        XCTAssertEqual(calls, 1)
+        await store.refresh(now: now.addingTimeInterval(120))
+        calls = await source.calls
+        XCTAssertEqual(calls, 2)
+        await source.fail()
+        await store.refresh(now: now.addingTimeInterval(240))
+        await store.refresh(now: now.addingTimeInterval(360))
+        calls = await source.calls
+        XCTAssertEqual(calls, 3)
+        await store.refresh(now: now.addingTimeInterval(540))
+        calls = await source.calls
+        XCTAssertEqual(calls, 4)
+        XCTAssertNotNil(store.lastError)
+        XCTAssertEqual(store.snapshot?.fiveHour?.remainingPercent, 66)
+    }
     func testFailurePreservesLastReadingAndIsThrottled() async {
         let source = ClaudeUsageStub()
         let store = ClaudeUsageStore(source:source)

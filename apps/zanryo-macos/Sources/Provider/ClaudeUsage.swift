@@ -59,6 +59,8 @@ protocol ClaudeUsageProviding: Sendable {
 
 @MainActor
 final class ClaudeUsageStore: ObservableObject {
+    static let refreshInterval: TimeInterval = 120
+    static let failureRetryInterval: TimeInterval = 300
     private static let logger = Logger(subsystem: "io.joaoluna.Zanryo", category: "ClaudeUsage")
     @Published private(set) var snapshot: ClaudeUsageSnapshot?
     @Published private(set) var lastError: DisplayError?
@@ -77,10 +79,11 @@ final class ClaudeUsageStore: ObservableObject {
 
     func refresh(force: Bool = false, now: Date = Date()) async {
         if let task { await task.value; return }
-        // Native CLI is heavier than app-server. Bound both background polling
-        // and repeated failures; explicit refresh remains available.
+        // Read-only /usage is heavier than app-server. Healthy polling is faster,
+        // but failures retain the conservative retry budget. Never overlap probes.
+        let interval = lastError == nil ? Self.refreshInterval : Self.failureRetryInterval
         if !force, let lastAttempt, now.timeIntervalSince(lastAttempt) >= 0,
-           now.timeIntervalSince(lastAttempt) < 300 { return }
+           now.timeIntervalSince(lastAttempt) < interval { return }
         lastAttempt = now
         isRefreshing = true
         Self.logger.notice("Native quota refresh started")
