@@ -187,7 +187,9 @@ impl UsageScreen {
         // together in one read. UTF-8/escape state stays inside vt100.
         for byte in bytes {
             self.parser.process(&[*byte]);
-            if *byte == b'\n' {
+            // "Refreshing" may be erased by an inline ANSI redraw before any
+            // newline arrives. Observe its final byte, not only chunk boundaries.
+            if *byte == b'g' || *byte == b'\n' {
                 self.observe_refresh();
             }
         }
@@ -361,6 +363,17 @@ mod tests {
                 .as_bytes(),
             )
             .unwrap();
+        assert!(screen.completed(now()).is_ok());
+    }
+    #[test]
+    fn inline_refresh_erased_without_newline_is_observed() {
+        let mut screen = UsageScreen::new();
+        screen.mark_requested();
+        let redraw = format!(
+            "Refreshing…\x1b[2J\x1b[H{}",
+            frame(&session("34% used"), &week()).replace('\n', "\r\n")
+        );
+        screen.feed(redraw.as_bytes()).unwrap();
         assert!(screen.completed(now()).is_ok());
     }
     #[test]
