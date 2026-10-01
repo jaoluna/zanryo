@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -30,23 +30,45 @@ impl ProbeConfig {
 /// perform a model request. The app must opt in before scheduling this probe.
 pub struct ClaudeUsageProbe {
     config: ProbeConfig,
-    serial: Mutex<()>,
+    process_state: Arc<ProbeProcessState>,
+}
+
+/// One process slot shared across refreshes, including failed cleanup. A new
+/// probe must not accumulate children while a previous child is still exiting.
+#[derive(Default)]
+pub struct ProbeProcessState {
+    pending: Mutex<Option<ChildGuard>>,
 }
 
 impl ClaudeUsageProbe {
     pub fn new(config: ProbeConfig) -> Self {
+        Self::with_process_state(config, Arc::default())
+    }
+
+    pub fn with_process_state(config: ProbeConfig, process_state: Arc<ProbeProcessState>) -> Self {
         Self {
             config,
-            serial: Mutex::new(()),
+            process_state,
         }
     }
 
     pub fn read(&self) -> Result<Vec<RateLimit>> {
         // Reject overlapping probes rather than spawning extra CLI sessions.
-        let _guard = self
-            .serial
+        let mut pending = self
+            .process_state
+            .pending
             .try_lock()
             .map_err(|_| unavailable("probe already running"))?;
+        if let Some(child) = pending.as_mut() {
+            match child.0.try_wait() {
+                Ok(Some(_)) => *pending = None,
+                _ => {
+                    return Err(unavailable(
+                        "previous CLI is still exiting; no new probe started",
+                    ));
+                }
+            }
+        }
         if !self.config.executable.is_absolute()
             || !self.config.working_directory.is_absolute()
             || self.config.timeout.is_zero()
@@ -54,7 +76,7 @@ impl ClaudeUsageProbe {
         {
             return Err(unavailable("invalid probe configuration"));
         }
-        probe(&self.config)
+        probe(&self.config, &mut pending)
     }
 }
 
@@ -94,16 +116,37 @@ fn command(config: &ProbeConfig) -> CommandBuilder {
 }
 
 struct ChildGuard(Box<dyn portable_pty::Child + Send + Sync>);
+impl ChildGuard {
+    fn finish(&mut self, grace: Duration) -> bool {
+        match self.0.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) => {
+                let _ = self.0.kill();
+            }
+            Err(_) => return false,
+        }
+        let started = Instant::now();
+        loop {
+            match self.0.try_wait() {
+                Ok(Some(_)) => return true,
+                Err(_) => return false,
+                Ok(None) if started.elapsed() >= grace => return false,
+                Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+    }
+}
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        if !matches!(self.0.try_wait(), Ok(Some(_))) {
-            let _ = self.0.kill();
+        // Drop must never wait: macOS can leave a PTY child in an exiting state
+        // even after SIGKILL. Keep the ordinary reap path in bounded finish().
+        if matches!(self.0.try_wait(), Ok(None)) {
+            let _ = self.0.clone_killer().kill();
         }
-        let _ = self.0.wait();
     }
 }
 
-fn probe(config: &ProbeConfig) -> Result<Vec<RateLimit>> {
+fn probe(config: &ProbeConfig, pending: &mut Option<ChildGuard>) -> Result<Vec<RateLimit>> {
     let pty = native_pty_system()
         .openpty(PtySize {
             rows: 80,
@@ -130,9 +173,17 @@ fn probe(config: &ProbeConfig) -> Result<Vec<RateLimit>> {
     let result = drive(&mut reader, &mut writer, &mut child, config.timeout);
     drop(reader);
     drop(writer);
-    drop(child);
+    // Close every PTY descriptor before reaping. Keeping the master open while
+    // waiting can prevent the kernel from completing the child's termination.
     drop(pty.master);
-    result
+    if child.finish(Duration::from_millis(500)) {
+        result
+    } else {
+        *pending = Some(child);
+        Err(unavailable(
+            "CLI cleanup pending; retry after the child exits",
+        ))
+    }
 }
 
 #[cfg(unix)]
@@ -251,6 +302,120 @@ fn write_command(writer: &mut Box<dyn Write + Send>, bytes: &[u8]) -> Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct UnreapedChild;
+    impl portable_pty::ChildKiller for UnreapedChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(Self)
+        }
+    }
+    impl portable_pty::Child for UnreapedChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(None)
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            panic!("cleanup must never call blocking wait")
+        }
+        fn process_id(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[test]
+    fn dropping_unreaped_child_never_calls_blocking_wait() {
+        let started = Instant::now();
+        drop(ChildGuard(Box::new(UnreapedChild)));
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn cleanup_has_a_deadline_even_when_kill_succeeds_without_exit() {
+        let started = Instant::now();
+        let mut child = ChildGuard(Box::new(UnreapedChild));
+        assert!(!child.finish(Duration::from_millis(30)));
+        assert!(started.elapsed() < Duration::from_millis(200));
+    }
+
+    #[derive(Debug, Clone)]
+    struct DelayedExitChild(Arc<std::sync::atomic::AtomicBool>);
+    impl portable_pty::ChildKiller for DelayedExitChild {
+        fn kill(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn clone_killer(&self) -> Box<dyn portable_pty::ChildKiller + Send + Sync> {
+            Box::new(self.clone())
+        }
+    }
+    impl portable_pty::Child for DelayedExitChild {
+        fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+            Ok(self
+                .0
+                .load(std::sync::atomic::Ordering::Acquire)
+                .then(|| portable_pty::ExitStatus::with_exit_code(0)))
+        }
+        fn wait(&mut self) -> std::io::Result<portable_pty::ExitStatus> {
+            panic!("cleanup must never call blocking wait")
+        }
+        fn process_id(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pending_child_blocks_new_probe_instances_then_recovers_after_reap() {
+        let (directory, successful) = fake("success", Duration::from_secs(5));
+        let state = Arc::new(ProbeProcessState::default());
+        let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        *state.pending.lock().unwrap() =
+            Some(ChildGuard(Box::new(DelayedExitChild(Arc::clone(&exited)))));
+        for _ in 0..3 {
+            let probe =
+                ClaudeUsageProbe::with_process_state(successful.config.clone(), Arc::clone(&state));
+            let started = Instant::now();
+            assert!(
+                probe
+                    .read()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("previous CLI is still exiting")
+            );
+            assert!(started.elapsed() < Duration::from_millis(100));
+        }
+        exited.store(true, std::sync::atomic::Ordering::Release);
+        let probe =
+            ClaudeUsageProbe::with_process_state(successful.config.clone(), Arc::clone(&state));
+        assert_eq!(probe.read().unwrap()[0].remaining_percent, 66.0);
+        assert!(state.pending.lock().unwrap().is_none());
+        drop(directory);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn failed_probe_releases_slot_for_next_success_without_faking_freshness() {
+        let (_bad_dir, bad) = fake("exit-hang", Duration::from_millis(1400));
+        let (_good_dir, good) = fake("success", Duration::from_secs(5));
+        let state = Arc::new(ProbeProcessState::default());
+        let started = Instant::now();
+        assert!(
+            ClaudeUsageProbe::with_process_state(bad.config, Arc::clone(&state))
+                .read()
+                .is_err()
+        );
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(state.pending.lock().unwrap().is_none());
+        assert_eq!(
+            ClaudeUsageProbe::with_process_state(good.config, state)
+                .read()
+                .unwrap()[0]
+                .remaining_percent,
+            66.0
+        );
+    }
     #[test]
     #[cfg(unix)]
     fn idle_terminal_stays_nonblocking_while_slave_is_held_open() {
@@ -310,7 +475,7 @@ mod tests {
     #[test]
     fn rejects_concurrent_read() {
         let probe = ClaudeUsageProbe::new(ProbeConfig::new("/missing".into(), "/tmp".into()));
-        let _lock = probe.serial.lock().unwrap();
+        let _lock = probe.process_state.pending.lock().unwrap();
         assert!(
             probe
                 .read()

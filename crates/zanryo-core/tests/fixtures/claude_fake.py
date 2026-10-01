@@ -58,3 +58,6 @@ else:
             read_exact(b"\x1b")
             prompt()
             read_exact(b"/exit\r")
+            if mode == "exit-hang":
+                signal.signal(signal.SIGHUP, signal.SIG_IGN)
+                time.sleep(60)
