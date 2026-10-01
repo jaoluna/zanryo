@@ -124,9 +124,12 @@ persist samples, infer billing tiers or change live account settings.
 - Fable on Max is a sublimit sharing the weekly allowance, not an extra bucket.
   Display remaining percentage of the Fable cap separately, explain the shared
   allowance, and never sum it with weekly remaining. Pro uses paid usage credits.
-  No Fable percentage is installed until a supported live field is captured and
-  its denominator/reset semantics are proven. The existing collector only
-  supplies five-hour and aggregate-weekly limits.
+  Native Claude Code 2.1.282 `/usage` now supplies `Current week (Fable)`;
+  the 01/10 implementation records it independently as `claude_fable` with
+  its own percentage and reset, and shows it only when supplied. The three
+  discreet filters share one graph; no empty window or inferred plan bucket.
+  Healthy native refresh is 2 minutes; failures back off to 5 minutes. It is
+  read-only subscription probing, not a model prompt or a statusline hook.
 - Spark remains conditional on a fresh explicit source field, not a plan badge.
 - API-equivalent value gets one compact optional row with details on demand.
   Missing measurement is not $0. It is a retail API comparison for captured
