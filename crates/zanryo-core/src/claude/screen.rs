@@ -158,6 +158,18 @@ fn parse_reset(line: &str, kind: &LimitKind, observed: DateTime<Utc>) -> Result<
         .ok_or_else(invalid)
 }
 
+/// CLI versions whose safe prompt and usage dialog were observed live.
+const VERIFIED_CLI_VERSIONS: [&str; 2] = ["2.1.282", "2.1.299"];
+
+fn verified_cli(text: &str) -> bool {
+    text.split("Claude Code v").skip(1).any(|rest| {
+        let end = rest
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(rest.len());
+        VERIFIED_CLI_VERSIONS.contains(&&rest[..end])
+    })
+}
+
 /// Bounded terminal state plus proof that this request saw a refresh transition.
 pub(super) struct UsageScreen {
     parser: vt100::Parser,
@@ -208,7 +220,7 @@ impl UsageScreen {
     pub fn ready(&self) -> bool {
         let text = self.contents();
         // Version pinned to the observed CLI grammar, no commands on unknown prompts.
-        text.contains("Claude Code v2.1.282")
+        verified_cli(&text)
             && text.contains("Safe mode:")
             && text.contains("manual mode on")
             && text.lines().last().is_some_and(|line| line.trim() == "$")
@@ -399,5 +411,22 @@ mod tests {
         screen.feed(b"Please log in").unwrap();
         assert!(screen.blocked());
         assert!(screen.feed(&vec![b'x'; 256 * 1024]).is_err());
+    }
+
+    #[test]
+    fn prompt_requires_an_observed_cli_version() {
+        let ready = |version: &str| {
+            let mut screen = UsageScreen::new();
+            let prompt = format!(
+                "Claude Code v{version}\r\nSafe mode: customizations disabled\r\nmanual mode on\r\n$"
+            );
+            screen.feed(prompt.as_bytes()).unwrap();
+            screen.ready()
+        };
+        assert!(ready("2.1.282"));
+        assert!(ready("2.1.299"));
+        for unverified in ["2.1.296", "2.1.2990", "2.1.29", "3.0.0"] {
+            assert!(!ready(unverified), "{unverified}");
+        }
     }
 }
