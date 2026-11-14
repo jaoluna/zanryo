@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
-use chrono::{Duration, TimeZone, Utc};
+use chrono::{Duration, Utc};
 use tempfile::tempdir;
 use zanryo_core::{
     AccountContext, ForecastStatus, Freshness, HistoryRepository, LimitKind, PlanType, ProviderId,
@@ -71,8 +71,16 @@ impl RateLimitSource for FakeSource {
     }
 }
 
+/// A fixed calendar date ages past the 90-day history retention and is pruned
+/// on refresh, so fixtures use yesterday (UTC), frozen once per test run.
+fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
+    static DAY: LazyLock<chrono::NaiveDate> =
+        LazyLock::new(|| (Utc::now() - Duration::days(1)).date_naive());
+    DAY.and_hms_opt(hour, minute, 0).unwrap().and_utc()
+}
+
 fn sample_limits() -> Vec<RateLimit> {
-    let observed = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let observed = at(9, 0);
     let reset = observed + Duration::days(5);
     vec![
         RateLimit::new(
@@ -138,10 +146,6 @@ async fn fresh_dashboard_reports_five_hour_pace_separately_without_extra_collect
     assert_eq!(short.chart.observed.last().unwrap().remaining_percent, 60.0);
     assert_eq!(short.chart.observed.last().unwrap().at, now);
     assert!((short.consumed_per_day.unwrap() / 24.0 - 20.0).abs() < 0.001);
-}
-
-fn at(hour: u32, minute: u32) -> chrono::DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 7, 20, hour, minute, 0).unwrap()
 }
 
 fn weekly(
@@ -224,7 +228,7 @@ async fn concurrent_refreshes_share_one_source_read() {
 async fn forecast_uses_persisted_weekly_history() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
     let reset = now + Duration::days(5);
     let samples = vec![
         RateLimit::new(
@@ -298,7 +302,7 @@ async fn refresh_dashboard_returns_matching_quota_and_forecast() {
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
     let source = FakeSource::succeeding(sample_limits());
     let service = QuotaService::new(ProviderId::OpenAi, source, history);
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
@@ -324,7 +328,7 @@ async fn fresh_dashboard_includes_and_persists_the_account_plan() {
         FakeSource::succeeding(sample_limits()),
         history.clone(),
     );
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
@@ -339,7 +343,7 @@ async fn fresh_dashboard_includes_and_persists_the_account_plan() {
 async fn fresh_dashboard_reuses_a_plan_cached_less_than_24_hours_ago() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
     history
         .upsert_account_context(&AccountContext::new(
             ProviderId::OpenAi,
@@ -361,7 +365,7 @@ async fn fresh_dashboard_reuses_a_plan_cached_less_than_24_hours_ago() {
 async fn failed_account_read_keeps_the_fresh_quota_and_cached_plan() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
     history
         .upsert_account_context(&AccountContext::new(
             ProviderId::OpenAi,
@@ -389,7 +393,7 @@ async fn concurrent_fresh_dashboards_share_one_account_read() {
     source.delay = StdDuration::from_millis(30);
     let account_reads = Arc::clone(&source.account_reads);
     let service = QuotaService::new(ProviderId::OpenAi, source, history);
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let (first, second) = tokio::join!(
         service.refresh_dashboard(now),
@@ -410,7 +414,7 @@ async fn concurrent_account_rpc_failure_without_cache_shares_one_unknown_outcome
     source.delay = StdDuration::from_millis(30);
     let account_reads = Arc::clone(&source.account_reads);
     let service = QuotaService::new(ProviderId::OpenAi, source, history);
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let (first, second) = tokio::join!(
         service.refresh_dashboard(now),
@@ -432,7 +436,7 @@ async fn concurrent_account_rpc_failure_without_cache_shares_one_unknown_outcome
 async fn concurrent_account_rpc_failure_shares_the_cached_plan_outcome() {
     let directory = tempdir().unwrap();
     let history = HistoryRepository::open(directory.path().join("history.sqlite3")).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
     history
         .upsert_account_context(&AccountContext::new(
             ProviderId::OpenAi,
@@ -464,7 +468,7 @@ async fn sequential_account_rpc_failures_retry_after_a_shared_outcome() {
     source.account_fail = true;
     let account_reads = Arc::clone(&source.account_reads);
     let service = QuotaService::new(ProviderId::OpenAi, source, history);
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let first = service.refresh_dashboard(now).await.unwrap();
     let second = service.refresh_dashboard(now).await.unwrap();
@@ -482,7 +486,7 @@ async fn stale_dashboard_does_not_read_the_account_plan() {
     let source = FakeSource::failing();
     let account_reads = Arc::clone(&source.account_reads);
     let service = QuotaService::new(ProviderId::OpenAi, source, history);
-    let now = Utc.with_ymd_and_hms(2026, 7, 20, 9, 0, 0).unwrap();
+    let now = at(9, 0);
 
     let dashboard = service.refresh_dashboard(now).await.unwrap();
 
