@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -165,11 +165,20 @@ pub fn resolve_codex_path() -> Option<PathBuf> {
     {
         candidates.push(bundled);
     }
-    candidates.push(PathBuf::from(
+    candidates.extend(desktop_codex_candidates(Path::new(
         "/Applications/ChatGPT.app/Contents/Resources/codex",
-    ));
+    )));
 
     resolve_executable(candidates)
+}
+
+fn desktop_codex_candidates(legacy_executable: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(resources) = legacy_executable.parent() {
+        candidates.push(resources.join("codex-cli/CodexCLI.app/Contents/MacOS/codex"));
+    }
+    candidates.push(legacy_executable.to_path_buf());
+    candidates
 }
 
 #[async_trait::async_trait]
@@ -305,6 +314,81 @@ fn summarize_rpc_error(error: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[cfg(unix)]
+    fn desktop_executable(path: PathBuf) -> PathBuf {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path.canonicalize().unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn desktop_codex_resolves_nested_cli_without_legacy_executable() {
+        let root = tempfile::tempdir().unwrap();
+        let resources = root.path().join("ChatGPT.app/Contents/Resources");
+        let expected =
+            desktop_executable(resources.join("codex-cli/CodexCLI.app/Contents/MacOS/codex"));
+        assert_eq!(
+            resolve_executable(desktop_codex_candidates(&resources.join("codex"))),
+            Some(expected)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn desktop_codex_keeps_legacy_layout_compatible() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join("ChatGPT.app/Contents/Resources/codex");
+        let expected = desktop_executable(legacy.clone());
+        assert_eq!(
+            resolve_executable(desktop_codex_candidates(&legacy)),
+            Some(expected)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn desktop_codex_prefers_current_nested_layout_when_both_exist() {
+        let root = tempfile::tempdir().unwrap();
+        let resources = root.path().join("ChatGPT.app/Contents/Resources");
+        desktop_executable(resources.join("codex"));
+        let expected =
+            desktop_executable(resources.join("codex-cli/CodexCLI.app/Contents/MacOS/codex"));
+        assert_eq!(
+            resolve_executable(desktop_codex_candidates(&resources.join("codex"))),
+            Some(expected)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn desktop_codex_rejects_non_executable_nested_file_and_falls_back() {
+        let root = tempfile::tempdir().unwrap();
+        let resources = root.path().join("ChatGPT.app/Contents/Resources");
+        let nested = resources.join("codex-cli/CodexCLI.app/Contents/MacOS/codex");
+        desktop_executable(nested.clone());
+        fs::set_permissions(nested, fs::Permissions::from_mode(0o644)).unwrap();
+        let expected = desktop_executable(resources.join("codex"));
+        assert_eq!(
+            resolve_executable(desktop_codex_candidates(&resources.join("codex"))),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn desktop_codex_omits_missing_layouts() {
+        let root = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_executable(desktop_codex_candidates(&root.path().join("codex"))),
+            None
+        );
+    }
 
     #[tokio::test]
     async fn request_ids_are_monotonic() {

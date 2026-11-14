@@ -8,7 +8,7 @@ use zanryo_core::{
 };
 
 use crate::envelope::BridgeError;
-use zanryo_core::claude::{ClaudeUsageProbe, ClaudeUsageSnapshot, ProbeConfig};
+use zanryo_core::claude::{ClaudeUsageProbe, ClaudeUsageSnapshot, ProbeConfig, ProbeProcessState};
 
 pub struct BridgeHandle {
     runtime: Option<Runtime>,
@@ -16,6 +16,7 @@ pub struct BridgeHandle {
     service: Mutex<Option<Arc<QuotaService<CodexAppServer>>>>,
     initialization_error: Option<BridgeError>,
     claude_lock: Mutex<()>,
+    claude_process_state: Arc<ProbeProcessState>,
 }
 
 impl Default for BridgeHandle {
@@ -55,6 +56,7 @@ impl BridgeHandle {
             service: Mutex::new(None),
             initialization_error,
             claude_lock: Mutex::new(()),
+            claude_process_state: Arc::default(),
         }
     }
 
@@ -99,13 +101,15 @@ impl BridgeHandle {
                     message: "Claude CLI was not found".into(),
                 })?
                 .executable_path;
-            let limits =
-                ClaudeUsageProbe::new(ProbeConfig::new(executable, working_directory.to_owned()))
-                    .read()
-                    .map_err(|error| BridgeError {
-                        code: "claude_unavailable",
-                        message: error.to_string(),
-                    })?;
+            let limits = ClaudeUsageProbe::with_process_state(
+                ProbeConfig::new(executable, working_directory.to_owned()),
+                Arc::clone(&self.claude_process_state),
+            )
+            .read()
+            .map_err(|error| BridgeError {
+                code: "claude_unavailable",
+                message: error.to_string(),
+            })?;
             ClaudeUsageSnapshot::record(history, limits).map_err(BridgeError::from)
         })();
         match result {

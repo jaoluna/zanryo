@@ -5,11 +5,12 @@ struct ClaudeUsageView: View {
     @ObservedObject var registry: ProviderRegistry
     @State var chartWindow: QuotaChartWindow = .weekly
     private var chartWindows: [QuotaChartWindow] {
-        QuotaChartWindow.available(fiveHour: registry.claudeSnapshot?.fiveHour, weekly: registry.claudeSnapshot?.weekly)
+        QuotaChartWindow.available(fiveHour: registry.claudeSnapshot?.fiveHour, weekly: registry.claudeSnapshot?.weekly,
+            fable: registry.claudeSnapshot?.fable)
     }
     private var activeWindow: QuotaChartWindow { chartWindow.resolved(in: chartWindows) }
     private var chartLimit: RateLimit? {
-        activeWindow == .fiveHour ? registry.claudeSnapshot?.fiveHour : registry.claudeSnapshot?.weekly
+        registry.claudeSnapshot?.limit(for: activeWindow)
     }
     private var model: WeeklyOutlookModel {
         .make(snapshot: registry.claudeSnapshot, hasError: registry.claudeError != nil, window: activeWindow)
@@ -21,6 +22,11 @@ struct ClaudeUsageView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     QuotaStripView(provider: "Claude", windows: windows, accent: PopoverColor.claudeAccent,
                         emptyText: registry.claudeIsRefreshing ? "Reading Claude usage…" : "Claude usage unavailable")
+                    if registry.claudeSnapshot?.fable != nil {
+                        Text("Fable also counts toward Weekly. Limits are not added.")
+                            .font(.system(size: 9.5)).foregroundStyle(PopoverColor.secondaryForeground)
+                            .padding(.horizontal, 16).padding(.bottom, 8)
+                    }
                     divider
                     WeeklyChartView(timeline: .init(series: model.series, reset: chartLimit?.resetsAt, window: activeWindow),
                         pace: model.pace, accent: PopoverColor.claudeAccent, provider: "Claude",
@@ -44,13 +50,14 @@ struct ClaudeUsageView: View {
         var result: [QuotaStripView.Window] = []
         if let limit = registry.claudeSnapshot?.fiveHour { result.append(.init(title: "5 hours", limit: limit)) }
         if let limit = registry.claudeSnapshot?.weekly { result.append(.init(title: "Weekly", limit: limit)) }
+        if let limit = registry.claudeSnapshot?.fable { result.append(.init(title: "Fable weekly", limit: limit)) }
         return result
     }
 
     private var footer: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Claude Code /usage · every 5 min")
+                Text("Claude Code /usage · 2 min · retry 5 min")
                 if let date = registry.claudeSnapshot?.preferredLimit?.observedAt {
                     Text("\(model.isStale ? "Saved" : "Read") \(date.formatted(date: .omitted, time: .standard))")
                 }

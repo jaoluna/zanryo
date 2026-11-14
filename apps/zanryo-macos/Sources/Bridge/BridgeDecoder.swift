@@ -53,6 +53,7 @@ enum BridgeDecoder {
         guard result.provider == .claude, !result.windows.isEmpty,
               result.fiveHour == nil || result.fiveHour?.kind == .fiveHour,
               result.weekly == nil || result.weekly?.kind == .weekly,
+              result.fable == nil || result.fable?.kind == .fable,
               result.windows.allSatisfy({ $0.remainingPercent.isFinite && (0...100).contains($0.remainingPercent) }) else {
             throw BridgeDecodeError.remote(code: "invalid_claude_payload", message: "Invalid Claude quota response")
         }

@@ -40,8 +40,8 @@ struct WeeklyOutlookModel {
     }
 
     static func make(snapshot: ClaudeUsageSnapshot?, hasError: Bool, now: Date = Date(), window: QuotaChartWindow = .weekly) -> Self {
-        let limit = window == .fiveHour ? snapshot?.fiveHour : snapshot?.weekly
-        let report = window == .fiveHour ? snapshot?.fiveHourForecast : snapshot?.weeklyForecast
+        let limit = snapshot?.limit(for: window)
+        let report = snapshot?.forecast(for: window)
         let stale = hasError || snapshot?.freshness == .stale || limit.map {
             now.timeIntervalSince($0.observedAt) > 360 || $0.observedAt > now || $0.resetsAt <= now
         } == true
@@ -58,7 +58,7 @@ struct WeeklyOutlookModel {
         let saved = report?.chart.observed ?? []
         let start = weekly.resetsAt.addingTimeInterval(-window.duration)
         let observed = (saved.isEmpty ? [ChartPoint(at: weekly.observedAt, remainingPercent: weekly.remainingPercent)] : saved)
-            .filter { window == .weekly || ($0.at >= start && $0.at < weekly.resetsAt) }
+            .filter { window != .fiveHour || ($0.at >= start && $0.at < weekly.resetsAt) }
             .sorted { $0.at < $1.at }
         let estimated = !stale && report?.status == .estimated && report?.chart.forecast.isEmpty == false
         var series = observed.map {
@@ -95,8 +95,8 @@ struct WeeklyOutlookModel {
         let confidence = estimated ? report?.confidence.rawValue.capitalized ?? "Unavailable" : pending
         let rows = [
             PopoverMetric(label: "Estimated depletion", value: depletion),
-            PopoverMetric(label: window == .weekly ? "At weekly reset" : "At 5h reset", value: projected.map { String(format: "%.1f%% remaining", $0) } ?? pending),
-            PopoverMetric(label: window == .weekly ? "Available per day" : "Available per hour", value: estimated ? rate(report?.sustainablePerDay, window: window) : pending),
+            PopoverMetric(label: window != .fiveHour ? "At weekly reset" : "At 5h reset", value: projected.map { String(format: "%.1f%% remaining", $0) } ?? pending),
+            PopoverMetric(label: window != .fiveHour ? "Available per day" : "Available per hour", value: estimated ? rate(report?.sustainablePerDay, window: window) : pending),
             // The chart compresses flat stretches; chart points are not a sample count.
             PopoverMetric(label: "Confidence", value: confidence),
         ]
@@ -110,7 +110,7 @@ struct WeeklyOutlookModel {
     }
 
     private static func rate(_ value: Double?, window: QuotaChartWindow) -> String {
-        value.map { window == .weekly ? String(format: "%.1f pp/day", $0) : String(format: "%.1f pp/hour", $0 / 24) } ?? "Unavailable"
+        value.map { window != .fiveHour ? String(format: "%.1f pp/day", $0) : String(format: "%.1f pp/hour", $0 / 24) } ?? "Unavailable"
     }
 
     private static func currentPace(_ value: Double?, window: QuotaChartWindow) -> String {
