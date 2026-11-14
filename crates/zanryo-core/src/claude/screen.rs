@@ -175,6 +175,24 @@ fn claude_cli_banner(text: &str) -> bool {
     })
 }
 
+/// The CLI's own notice that the login will expire. The session still works, so
+/// only this exact grammar is exempt from `blocked`; any other login text fails closed.
+fn login_expiry_notice(line: &str) -> bool {
+    let Some(rest) = line
+        .trim()
+        .strip_prefix("warning: Your login expires in ")
+        .and_then(|rest| rest.strip_suffix(" · run /login to renew"))
+    else {
+        return false;
+    };
+    let parts: Vec<_> = rest.split(' ').collect();
+    matches!(
+        parts.as_slice(),
+        [count, "day" | "days"]
+            if !count.is_empty() && count.chars().all(|c| c.is_ascii_digit())
+    )
+}
+
 /// Bounded terminal state plus proof that this request saw a refresh transition.
 pub(super) struct UsageScreen {
     parser: vt100::Parser,
@@ -231,7 +249,13 @@ impl UsageScreen {
             && text.lines().last().is_some_and(|line| line.trim() == "$")
     }
     pub fn blocked(&self) -> bool {
-        let text = self.contents().to_lowercase();
+        let text = self
+            .contents()
+            .lines()
+            .filter(|line| !login_expiry_notice(line))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .to_lowercase();
         [
             "trust this",
             "do you trust",
@@ -416,6 +440,48 @@ mod tests {
         screen.feed(b"Please log in").unwrap();
         assert!(screen.blocked());
         assert!(screen.feed(&vec![b'x'; 256 * 1024]).is_err());
+    }
+
+    #[test]
+    fn login_expiry_warning_is_not_a_login_prompt() {
+        let prompt = |notice: &str| {
+            let mut screen = UsageScreen::new();
+            let text = format!(
+                "Claude Code v2.1.303\r\nwarning: Safe mode: all customizations are disabled\r\n{notice}\r\nmanual mode on\r\n$"
+            );
+            screen.feed(text.as_bytes()).unwrap();
+            screen
+        };
+        for notice in [
+            "warning: Your login expires in 3 days · run /login to renew",
+            "warning: Your login expires in 1 day · run /login to renew",
+        ] {
+            let screen = prompt(notice);
+            assert!(!screen.blocked(), "{notice}");
+            assert!(screen.ready(), "{notice}");
+        }
+        for notice in [
+            "warning: Your login expired · run /login to renew",
+            "warning: Your login expires in soon · run /login to renew",
+            "warning: Your login expires in 3 hours · run /login to renew",
+            "warning: Your login expires in 3 days · run /login to renew now",
+            "Please log in. warning: Your login expires in 3 days · run /login to renew",
+            "warning: Your login expires in 3 days · run /login to renew\r\nPlease log in",
+            "Please run /login",
+        ] {
+            assert!(prompt(notice).blocked(), "{notice}");
+        }
+
+        // The usage dialog still completes with the notice above it on screen.
+        let mut screen = prompt("warning: Your login expires in 3 days · run /login to renew");
+        screen.mark_requested();
+        let dialog = format!(
+            "\r\nRefreshing…\r\x1b[2K{}",
+            frame(&session("34% used"), &week()).replace('\n', "\r\n")
+        );
+        screen.feed(dialog.as_bytes()).unwrap();
+        assert!(screen.contents().contains("Your login expires in 3 days"));
+        assert_eq!(screen.completed(now()).unwrap().len(), 2);
     }
 
     #[test]
