@@ -158,15 +158,20 @@ fn parse_reset(line: &str, kind: &LimitKind, observed: DateTime<Utc>) -> Result<
         .ok_or_else(invalid)
 }
 
-/// CLI versions whose safe prompt and usage dialog were observed live.
-const VERIFIED_CLI_VERSIONS: [&str; 2] = ["2.1.282", "2.1.299"];
-
-fn verified_cli(text: &str) -> bool {
+/// Any well-formed `major.minor.patch` CLI banner. The version is not pinned:
+/// the safe-mode prompt checks, `blocked` and the strict usage-frame parser fail
+/// closed when a future CLI changes its grammar, so the reading turns stale
+/// instead of persisting a wrong value.
+fn claude_cli_banner(text: &str) -> bool {
     text.split("Claude Code v").skip(1).any(|rest| {
         let end = rest
             .find(|c: char| !(c.is_ascii_digit() || c == '.'))
             .unwrap_or(rest.len());
-        VERIFIED_CLI_VERSIONS.contains(&&rest[..end])
+        let parts: Vec<_> = rest[..end].split('.').collect();
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
     })
 }
 
@@ -219,8 +224,8 @@ impl UsageScreen {
     }
     pub fn ready(&self) -> bool {
         let text = self.contents();
-        // Version pinned to the observed CLI grammar, no commands on unknown prompts.
-        verified_cli(&text)
+        // Any CLI version, but only on the recognised safe-mode prompt.
+        claude_cli_banner(&text)
             && text.contains("Safe mode:")
             && text.contains("manual mode on")
             && text.lines().last().is_some_and(|line| line.trim() == "$")
@@ -414,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_requires_an_observed_cli_version() {
+    fn prompt_accepts_any_well_formed_cli_version() {
         let ready = |version: &str| {
             let mut screen = UsageScreen::new();
             let prompt = format!(
@@ -423,10 +428,20 @@ mod tests {
             screen.feed(prompt.as_bytes()).unwrap();
             screen.ready()
         };
-        assert!(ready("2.1.282"));
-        assert!(ready("2.1.299"));
-        for unverified in ["2.1.296", "2.1.2990", "2.1.29", "3.0.0"] {
-            assert!(!ready(unverified), "{unverified}");
+        for version in [
+            "2.1.282",
+            "2.1.319",
+            "2.1.320",
+            "2.2.0",
+            "3.0.0",
+            "10.20.300",
+        ] {
+            assert!(ready(version), "{version}");
+        }
+        for malformed in [
+            "", "2", "2.1", "2.1.", ".2.1", "2..1", "2.1.3.4", "v2.1.3", "x.y.z",
+        ] {
+            assert!(!ready(malformed), "{malformed:?}");
         }
     }
 }
