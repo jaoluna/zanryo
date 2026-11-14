@@ -4,6 +4,49 @@ import XCTest
 @testable import Zanryo
 
 final class QuotaChartWindowTests: XCTestCase {
+    @MainActor
+    func testWeeklyRefillRemainsOneContinuousLineInTheSameWeek() async throws {
+        let now = Date()
+        let reset = now.addingTimeInterval(2 * 86400)
+        let values: [Double] = [100, 10, 2, 100, 95, 79]
+        let offsets: [TimeInterval] = [-5 * 86400, -2 * 86400, -7260, -7200, -3600, 0]
+        let points = zip(values, offsets).map { ChartPoint(at: now.addingTimeInterval($0.1), remainingPercent: $0.0) }
+        let limit = RateLimit(kind: .weekly, limitId: "claude_weekly", remainingPercent: 79,
+                              resetsAt: reset, observedAt: now)
+        let report = ForecastReport(status: .collectingHistory, confidence: .collecting,
+            consumedPerDay: nil, sustainablePerDay: nil, paceDifference: nil,
+            estimatedDepletionAt: nil, rateRange: nil,
+            chart: .init(observed: points, forecast: [], sustainable: []))
+        let model = WeeklyOutlookModel.make(weekly: limit, report: report, isStale: false)
+        let timeline = WeeklyChartTimeline(series: model.series, reset: reset)
+        XCTAssertEqual(model.historySeries.map(\.remainingPercent), values)
+        XCTAssertEqual(timeline.observed.map(\.at), points.map(\.at))
+        XCTAssertEqual(timeline.domain, reset.addingTimeInterval(-7 * 86400)...reset)
+        let chart = ForecastChartView(series: model.series, accessibilityLabel: "Weekly refill regression",
+            observedColor: PopoverColor.claudeAccent, displayDomain: timeline.domain)
+        XCTAssertEqual(chart.currentPoint?.remainingPercent, 79)
+        let view = WeeklyChartView(timeline: timeline, pace: model.pace,
+            accent: PopoverColor.claudeAccent, provider: "Claude")
+            .frame(width: 390).background(PopoverColor.background)
+        let host = NSHostingView(rootView: view)
+        host.frame = NSRect(x: 0, y: 0, width: 390, height: 245)
+        host.appearance = NSAppearance(named: .darkAqua)
+        let window = NSWindow(contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        defer { window.contentView = nil }
+        try await Task.sleep(for: .milliseconds(50))
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        XCTAssertGreaterThan(png.count, 10_000)
+        let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+        attachment.name = "claude-weekly-continuous-refill"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testFableFilterHasOwnValuesHistoryAndWeeklyUnits() {
         let now = Date()
         let original = fixture(now: now)

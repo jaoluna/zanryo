@@ -331,7 +331,10 @@ fn observed_points(samples: &[&RateLimit]) -> Vec<ChartPoint> {
         .collect()
 }
 
-fn chart_observed_points(samples: &[&RateLimit], budget_start: DateTime<Utc>) -> Vec<ChartPoint> {
+pub(crate) fn chart_observed_points(
+    samples: &[&RateLimit],
+    budget_start: DateTime<Utc>,
+) -> Vec<ChartPoint> {
     let visible_samples: Vec<_> = samples
         .iter()
         .copied()

@@ -121,7 +121,7 @@ fn forecast_from_history(
         .iter()
         .max_by_key(|sample| sample.observed_at)
         .map(|sample| sample.resets_at);
-    let cycle_samples: Vec<_> = samples
+    let mut cycle_samples: Vec<_> = samples
         .into_iter()
         .filter(|sample| {
             current_reset.is_some_and(|reset| {
@@ -129,6 +129,17 @@ fn forecast_from_history(
             })
         })
         .collect();
+    let mut weekly_observed = None;
+    if weekly.kind == LimitKind::Weekly {
+        cycle_samples.retain(|sample| sample.observed_at <= now);
+        cycle_samples.sort_by_key(|sample| sample.observed_at);
+        let (cleaned, segment_start) = confirmed_weekly_history(&cycle_samples);
+        weekly_observed = Some(crate::forecast::chart_observed_points(
+            &cleaned.iter().collect::<Vec<_>>(),
+            weekly.resets_at - chrono::Duration::days(7),
+        ));
+        cycle_samples = cleaned[segment_start..].to_vec();
+    }
     let mut forecast = if weekly.kind == LimitKind::FiveHour {
         ForecastEngine::calculate_five_hour(&cycle_samples, now)
     } else if weekly.kind == LimitKind::Fable {
@@ -144,6 +155,11 @@ fn forecast_from_history(
                 && (sample.remaining_percent - point.remaining_percent).abs() < f64::EPSILON
         })
     });
+    // The rate uses only post-refill consumption, but the visible line retains
+    // the entire scheduled week, including each confirmed upward jump.
+    if let Some(observed) = weekly_observed {
+        forecast.chart.observed = observed;
+    }
 
     // A stale cached quota can outlive its reset. Keep its recorded history,
     // but do not present a current pace or projection for an expired cycle.
@@ -162,9 +178,206 @@ fn forecast_from_history(
     Ok(Some(forecast))
 }
 
+/// Claude can replenish quota without moving its scheduled reset. Two distinct
+/// observations above the previous level confirm a new estimation segment;
+/// an isolated upward spike still goes through the existing outlier filter.
+/// Return the full cleaned history and the latest estimation segment's offset.
+/// Stored history, observation times and the scheduled reset stay intact.
+fn confirmed_weekly_history(samples: &[RateLimit]) -> (Vec<RateLimit>, usize) {
+    let mut cleaned: Vec<RateLimit> = Vec::with_capacity(samples.len());
+    let mut start = 0;
+    for (i, sample) in samples.iter().enumerate() {
+        if let Some(previous) = cleaned.last() {
+            let baseline = previous.remaining_percent;
+            if sample.remaining_percent > baseline + 1.0 {
+                if samples.get(i + 1).is_some_and(|next| {
+                    next.observed_at > sample.observed_at && next.remaining_percent > baseline + 1.0
+                }) {
+                    start = cleaned.len();
+                } else {
+                    continue;
+                }
+            }
+        }
+        cleaned.push(sample.clone());
+    }
+    (cleaned, start)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refill_detection_keeps_noise_and_uses_latest_confirmed_segment() {
+        let now = chrono::Utc::now();
+        let reset = now + chrono::Duration::days(2);
+        for (values, expected) in [
+            (vec![], vec![]),
+            (vec![2.0], vec![2.0]),
+            (vec![10.0, 11.0, 10.0], vec![10.0, 11.0, 10.0]),
+            (vec![2.0, 100.0], vec![2.0]),
+            (vec![2.0, 100.0, 99.0], vec![100.0, 99.0]),
+            (vec![2.0, 100.0, 99.0, 1.0, 90.0, 89.0], vec![90.0, 89.0]),
+            (vec![2.0, 100.0, 1.0, 90.0, 89.0], vec![90.0, 89.0]),
+        ] {
+            let samples: Vec<_> = values
+                .into_iter()
+                .enumerate()
+                .map(|(i, percent)| {
+                    make(
+                        ProviderId::Claude,
+                        LimitKind::Weekly,
+                        "claude_weekly",
+                        percent,
+                        reset,
+                        now + chrono::Duration::minutes(i as i64),
+                    )
+                })
+                .collect();
+            let (cleaned, start) = confirmed_weekly_history(&samples);
+            assert_eq!(
+                cleaned[start..]
+                    .iter()
+                    .map(|s| s.remaining_percent)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn weekly_refill_keeps_continuous_history_and_estimates_only_new_consumption() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = HistoryRepository::open(dir.path().join("history.sqlite3")).unwrap();
+        let now = chrono::Utc::now();
+        let reset = now + chrono::Duration::days(2);
+        let samples: Vec<_> = [10.0, 5.0, 2.0, 100.0, 95.0, 81.0]
+            .into_iter()
+            .enumerate()
+            .map(|(i, percent)| {
+                make(
+                    ProviderId::Claude,
+                    LimitKind::Weekly,
+                    "claude_weekly",
+                    percent,
+                    reset,
+                    now - chrono::Duration::minutes((5 - i as i64) * 20),
+                )
+            })
+            .collect();
+        history.insert_limits(&samples[..5]).unwrap();
+        let snapshot = ClaudeUsageSnapshot::record(&history, vec![samples[5].clone()]).unwrap();
+        let report = snapshot.weekly_forecast.unwrap();
+        assert_eq!(
+            report
+                .chart
+                .observed
+                .iter()
+                .map(|p| p.remaining_percent)
+                .collect::<Vec<_>>(),
+            vec![10.0, 5.0, 2.0, 100.0, 95.0, 81.0]
+        );
+        assert_eq!(report.status, crate::ForecastStatus::Estimated);
+        let deterministic = forecast_from_history(&history, snapshot.weekly.as_ref(), now)
+            .unwrap()
+            .unwrap();
+        let post_refill = ForecastEngine::calculate(&samples[3..], now);
+        assert_eq!(deterministic.consumed_per_day, post_refill.consumed_per_day);
+        assert_eq!(deterministic.chart.forecast, post_refill.chart.forecast);
+        assert_eq!(
+            deterministic.chart.sustainable,
+            post_refill.chart.sustainable
+        );
+        assert_eq!(report.chart.observed[0].at, samples[0].observed_at);
+        assert_eq!(report.chart.observed[3].at, samples[3].observed_at);
+        let cached = ClaudeUsageSnapshot::cached(&history).unwrap().unwrap();
+        assert_eq!(
+            cached.weekly_forecast.unwrap().chart.observed,
+            report.chart.observed
+        );
+        assert_eq!(
+            history
+                .limits_since(ProviderId::Claude, now - chrono::Duration::days(1))
+                .unwrap(),
+            samples
+        );
+    }
+
+    #[test]
+    fn weekly_multiple_refills_keep_all_confirmed_jumps_even_without_new_forecast() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = HistoryRepository::open(dir.path().join("history.sqlite3")).unwrap();
+        let now = chrono::Utc::now();
+        let reset = now + chrono::Duration::days(2);
+        let samples: Vec<_> = [10.0, 2.0, 100.0, 99.0, 1.0, 90.0, 89.0]
+            .into_iter()
+            .enumerate()
+            .map(|(i, percent)| {
+                make(
+                    ProviderId::Claude,
+                    LimitKind::Weekly,
+                    "claude_weekly",
+                    percent,
+                    reset,
+                    now - chrono::Duration::minutes((6 - i as i64) * 20),
+                )
+            })
+            .collect();
+        history.insert_limits(&samples).unwrap();
+        let report = forecast_from_history(&history, samples.last(), now)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            report
+                .chart
+                .observed
+                .iter()
+                .map(|p| p.remaining_percent)
+                .collect::<Vec<_>>(),
+            vec![10.0, 2.0, 100.0, 99.0, 1.0, 90.0, 89.0]
+        );
+        assert_eq!(report.status, crate::ForecastStatus::CollectingHistory);
+        assert!(report.chart.forecast.is_empty());
+        assert!(report.consumed_per_day.is_none());
+    }
+
+    #[test]
+    fn weekly_isolated_spike_does_not_replace_valid_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = HistoryRepository::open(dir.path().join("history.sqlite3")).unwrap();
+        let now = chrono::Utc::now();
+        let reset = now + chrono::Duration::days(2);
+        let samples: Vec<_> = [10.0, 100.0, 8.0, 6.0]
+            .into_iter()
+            .enumerate()
+            .map(|(i, percent)| {
+                make(
+                    ProviderId::Claude,
+                    LimitKind::Weekly,
+                    "claude_weekly",
+                    percent,
+                    reset,
+                    now - chrono::Duration::minutes((3 - i as i64) * 20),
+                )
+            })
+            .collect();
+        history.insert_limits(&samples).unwrap();
+        let report = ClaudeUsageSnapshot::cached(&history)
+            .unwrap()
+            .unwrap()
+            .weekly_forecast
+            .unwrap();
+        assert_eq!(
+            report
+                .chart
+                .observed
+                .iter()
+                .map(|p| p.remaining_percent)
+                .collect::<Vec<_>>(),
+            vec![10.0, 8.0, 6.0]
+        );
+    }
 
     fn make(
         provider: ProviderId,
