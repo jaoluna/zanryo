@@ -30,7 +30,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lints
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
   build:
     name: ${{ matrix.name }}
@@ -69,9 +69,10 @@ jobs:
           xcodebuild -version
           rustc --version
           cargo --version
+          /usr/bin/python3 --version
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Install XcodeGen
         run: brew bundle
@@ -113,13 +114,15 @@ jobs:
           kill "$pid"
           test -f "$home/Library/Application Support/io.joaoluna.Zanryo/history.sqlite3"
 
-      # Limits of the hosted runners, seen in the first run of this workflow:
-      # - NSWorkspace returns the generic icon for the freshly built app, and
-      #   takes half an hour to do so on Intel, so the registered-icon test is
-      #   left to local runs;
+      # What the first runs of this workflow showed:
+      # - on the macOS 26 runners NSWorkspace returns the generic icon for the
+      #   freshly built app (after half an hour on Intel), so the
+      #   registered-icon test is skipped here; it passed on macOS 15;
       # - on the macOS 15 Intel image the rendering tests abort inside Metal
-      #   ("Target device architecture is nil"), and Xcode 16.4 does not
-      #   compile the test target, so the suite runs on macOS 26 only.
+      #   ("Target device architecture is nil");
+      # - the test sources do not compile with Xcode 16.4 (main-actor
+      #   isolation errors), although the app does.
+      # So the suite runs on the macOS 26 runners, without that one test.
       - name: App tests
         if: matrix.app_tests
         run: |
