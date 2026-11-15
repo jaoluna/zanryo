@@ -1,0 +1,168 @@
+name: CI
+
+# Runs on every branch push to this repository, so a branch is checked before
+# it becomes a pull request. Pull requests from forks are not built here.
+on:
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# GitHub's standard macOS runners are free for public repositories only, so
+# every job is skipped if this repository is ever made private.
+jobs:
+  lint:
+    name: Rust format and lints
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Lints
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+  build:
+    name: ${{ matrix.name }}
+    if: ${{ !github.event.repository.private }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple silicon, macOS 26
+            runner: macos-26
+            app_tests: true
+          - name: Intel, macOS 26
+            runner: macos-26-intel
+            app_tests: true
+          # An older system and an older Xcode: the app must still build and
+          # launch. The app tests cannot run here, see the step below.
+          - name: Intel, macOS 15, Xcode 16.4
+            runner: macos-15-intel
+            xcode: /Applications/Xcode_16.4.app
+            app_tests: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        if: matrix.xcode
+        run: echo "DEVELOPER_DIR=${{ matrix.xcode }}/Contents/Developer" >> "$GITHUB_ENV"
+
+      - name: Show the toolchain
+        run: |
+          uname -m
+          sw_vers
+          xcodebuild -version
+          rustc --version
+          cargo --version
+          /usr/bin/python3 --version
+
+      - name: Rust tests
+        run: cargo test --locked --workspace
+
+      - name: Install XcodeGen
+        run: brew bundle
+
+      # The same commands as the README, so the documented install stays true.
+      - name: Build the app
+        run: |
+          xcodegen generate --spec apps/zanryo-macos/project.yml
+          xcodebuild \
+            -project apps/zanryo-macos/Zanryo.xcodeproj \
+            -scheme Zanryo \
+            -configuration Release \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath "$RUNNER_TEMP/zanryo-build" \
+            build
+
+      - name: The app is built for this machine
+        run: |
+          binary="$RUNNER_TEMP/zanryo-build/Build/Products/Release/Zanryo.app/Contents/MacOS/Zanryo"
+          archs="$(lipo -archs "$binary")"
+          echo "built: $archs, machine: $(uname -m)"
+          test "$archs" = "$(uname -m)"
+
+      # A throwaway home: the database must appear there, which shows the Rust
+      # core started inside the app and not only that the process stayed up.
+      - name: The app launches, opens its database and keeps running
+        run: |
+          binary="$RUNNER_TEMP/zanryo-build/Build/Products/Release/Zanryo.app/Contents/MacOS/Zanryo"
+          home="$RUNNER_TEMP/zanryo-home"
+          mkdir -p "$home"
+          HOME="$home" CFFIXED_USER_HOME="$home" "$binary" > "$RUNNER_TEMP/zanryo-app.log" 2>&1 &
+          pid=$!
+          sleep 20
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::Zanryo exited during its first 20 seconds"
+            cat "$RUNNER_TEMP/zanryo-app.log"
+            exit 1
+          fi
+          kill "$pid"
+          test -f "$home/Library/Application Support/io.joaoluna.Zanryo/history.sqlite3"
+
+      # What the first runs of this workflow showed:
+      # - on the macOS 26 runners NSWorkspace returns the generic icon for the
+      #   freshly built app (after half an hour on Intel), so the
+      #   registered-icon test is skipped here; it passed on macOS 15;
+      # - on the macOS 15 Intel image the rendering tests abort inside Metal
+      #   ("Target device architecture is nil");
+      # - the test sources do not compile with Xcode 16.4 (main-actor
+      #   isolation errors), although the app does.
+      # So the suite runs on the macOS 26 runners, without that one test.
+      - name: App tests
+        if: matrix.app_tests
+        run: |
+          xcodebuild test \
+            -project apps/zanryo-macos/Zanryo.xcodeproj \
+            -scheme Zanryo \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -derivedDataPath "$RUNNER_TEMP/zanryo-test" \
+            -skip-testing:ZanryoTests/AppResourceTests/testApplicationIconIsRegisteredAndUsesApprovedDragonArt \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 60
+
+  universal:
+    name: Universal app
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        run: brew bundle
+
+      # A destination without an architecture builds every architecture.
+      - name: Build for both architectures
+        run: |
+          xcodegen generate --spec apps/zanryo-macos/project.yml
+          xcodebuild \
+            -project apps/zanryo-macos/Zanryo.xcodeproj \
+            -scheme Zanryo \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/zanryo-universal" \
+            build
+
+      - name: The app holds both architectures
+        run: |
+          binary="$RUNNER_TEMP/zanryo-universal/Build/Products/Release/Zanryo.app/Contents/MacOS/Zanryo"
+          archs="$(lipo -archs "$binary")"
+          echo "built: $archs"
+          [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]]

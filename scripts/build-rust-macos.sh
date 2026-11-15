@@ -2,7 +2,9 @@
 
 set -euo pipefail
 
-export PATH="/opt/homebrew/opt/rustup/bin:${PATH}"
+# Xcode runs build phases with a minimal PATH. Cover Homebrew on Apple silicon
+# and on Intel, and a rustup.rs install.
+export PATH="/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${HOME}/.cargo/bin:${PATH}"
 export MACOSX_DEPLOYMENT_TARGET="14.0"
 
 if [[ -n "${SRCROOT:-}" ]]; then
@@ -10,23 +12,53 @@ if [[ -n "${SRCROOT:-}" ]]; then
 else
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
-target="aarch64-apple-darwin"
 generated_dir="${repo_root}/apps/zanryo-macos/Generated"
-library_source="${repo_root}/target/${target}/release/libzanryo_bridge.a"
 header_source="${repo_root}/crates/zanryo-bridge/include/zanryo_bridge.h"
 
 if [[ -d "${HOME}/Applications/Xcode.app/Contents/Developer" ]]; then
   export DEVELOPER_DIR="${HOME}/Applications/Xcode.app/Contents/Developer"
 fi
 
-if ! rustup target list --installed | grep -qx "${target}"; then
-  rustup target add "${target}"
+# Xcode lists the architectures of the current build in ARCHS. Outside Xcode,
+# build for the machine this runs on.
+read -r -a archs <<< "${ARCHS:-$(uname -m)}"
+if [[ "${#archs[@]}" -eq 0 ]]; then
+  printf 'ARCHS names no architecture\n' >&2
+  exit 1
 fi
 
-(
-  cd "${repo_root}"
-  cargo build -p zanryo-bridge --release --target "${target}"
-)
+# rustup and cargo must resolve the toolchain this repository pins, and the
+# libraries are read back from this target directory.
+cd "${repo_root}"
+target_dir="${repo_root}/target"
+
+installed_targets="$(rustup target list --installed)"
+libraries=()
+for arch in "${archs[@]}"; do
+  case "${arch}" in
+    arm64) target="aarch64-apple-darwin" ;;
+    x86_64) target="x86_64-apple-darwin" ;;
+    *)
+      printf 'Unsupported architecture: %s\n' "${arch}" >&2
+      exit 1
+      ;;
+  esac
+
+  if ! grep -qx "${target}" <<< "${installed_targets}"; then
+    rustup target add "${target}"
+  fi
+
+  cargo build -p zanryo-bridge --release --target "${target}" --target-dir "${target_dir}"
+  libraries+=("${target_dir}/${target}/release/libzanryo_bridge.a")
+done
+
+if [[ "${#libraries[@]}" -eq 1 ]]; then
+  library_source="${libraries[0]}"
+else
+  library_source="${target_dir}/universal-apple-darwin/release/libzanryo_bridge.a"
+  mkdir -p "$(dirname "${library_source}")"
+  lipo -create "${libraries[@]}" -output "${library_source}"
+fi
 
 mkdir -p "${generated_dir}"
 
