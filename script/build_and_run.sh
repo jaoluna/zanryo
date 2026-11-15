@@ -18,7 +18,7 @@ fi
 derived="${ZANRYO_DERIVED_DATA:-${root}/.build/macos}"
 xcodegen generate --spec "${root}/apps/zanryo-macos/project.yml"
 xcodebuild -project "${root}/apps/zanryo-macos/Zanryo.xcodeproj" \
-  -scheme Zanryo -configuration Release -destination 'platform=macOS,arch=arm64' \
+  -scheme Zanryo -configuration Release -destination "platform=macOS,arch=$(uname -m)" \
   -derivedDataPath "$derived" build
 [[ "$mode" == --build-only ]] && exit 0
 app="${derived}/Build/Products/Release/Zanryo.app"

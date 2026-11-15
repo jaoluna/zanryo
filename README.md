@@ -101,7 +101,7 @@ There is no Zanryo account, cloud synchronization, or product telemetry. Codex c
 
 ### macOS app from source
 
-The current shell targets Apple silicon and macOS 14 or newer. Install Xcode, [Rust through rustup](https://rustup.rs/), and XcodeGen, then run:
+The build produces an app for the architecture it runs on, Apple silicon or Intel. The app needs macOS 14 or newer. Install Xcode, [Rust through rustup](https://rustup.rs/), and XcodeGen, then run:
 
 ```console
 git clone https://github.com/jaoluna/zanryo.git
@@ -112,11 +112,13 @@ xcodebuild \
   -project apps/zanryo-macos/Zanryo.xcodeproj \
   -scheme Zanryo \
   -configuration Release \
-  -destination 'platform=macOS,arch=arm64' \
+  -destination "platform=macOS,arch=$(uname -m)" \
   -derivedDataPath /tmp/zanryo-build \
   build
 open /tmp/zanryo-build/Build/Products/Release/Zanryo.app
 ```
+
+Intel support is new and has not been verified on an Intel Mac. The Rust core compiled for x86_64 passes its tests under Rosetta 2 and the Swift sources compile for x86_64, but the app has not yet been built with Xcode for Intel or run on Intel hardware.
 
 ### CLI from source
 
