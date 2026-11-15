@@ -303,6 +303,12 @@ fn write_command(writer: &mut Box<dyn Write + Send>, bytes: &[u8]) -> Result<()>
 mod tests {
     use super::*;
 
+    /// The production default. The success fixtures assert the outcome, not
+    /// the speed, and a loaded machine needs more than a few seconds for the
+    /// whole exchange.
+    #[cfg(unix)]
+    const SUCCESS_TIMEOUT: Duration = Duration::from_secs(20);
+
     #[derive(Debug)]
     struct UnreapedChild;
     impl portable_pty::ChildKiller for UnreapedChild {
@@ -368,7 +374,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn pending_child_blocks_new_probe_instances_then_recovers_after_reap() {
-        let (directory, successful) = fake("success", Duration::from_secs(5));
+        let (directory, successful) = fake("success", SUCCESS_TIMEOUT);
         let state = Arc::new(ProbeProcessState::default());
         let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
         *state.pending.lock().unwrap() =
@@ -398,7 +404,7 @@ mod tests {
     #[cfg(unix)]
     fn failed_probe_releases_slot_for_next_success_without_faking_freshness() {
         let (_bad_dir, bad) = fake("exit-hang", Duration::from_millis(1400));
-        let (_good_dir, good) = fake("success", Duration::from_secs(5));
+        let (_good_dir, good) = fake("success", SUCCESS_TIMEOUT);
         let state = Arc::new(ProbeProcessState::default());
         let started = Instant::now();
         assert!(
@@ -449,7 +455,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn offline_pty_proves_refresh_redraw_and_command_sequence() {
-        let (_directory, probe) = fake("success", Duration::from_secs(5));
+        let (_directory, probe) = fake("success", SUCCESS_TIMEOUT);
         let result = probe.read().unwrap();
         assert_eq!(result[0].remaining_percent, 66.0);
         assert_eq!(result[1].remaining_percent, 97.0);
