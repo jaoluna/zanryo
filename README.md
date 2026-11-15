@@ -118,7 +118,7 @@ xcodebuild \
 open /tmp/zanryo-build/Build/Products/Release/Zanryo.app
 ```
 
-Intel support is new and has not been verified on an Intel Mac. The Rust core compiled for x86_64 passes its tests under Rosetta 2 and the Swift sources compile for x86_64, but the app has not yet been built with Xcode for Intel or run on Intel hardware.
+Intel support is new. CI builds, tests and launches the app on Apple silicon and Intel runners on every push, but nobody has used the app on an Intel Mac yet.
 
 ### CLI from source
 

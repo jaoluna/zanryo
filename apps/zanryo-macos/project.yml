@@ -15,8 +15,8 @@ settings:
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     # A source build targets one architecture, the one it runs on. Xcode
     # ignores this setting for a destination without an architecture, so
-    # -destination 'generic/platform=macOS' should give a universal app. That
-    # has not been tried with Xcode yet; a release archive needs it.
+    # -destination 'generic/platform=macOS' gives a universal app; CI checks
+    # that. A release archive needs that form.
     ONLY_ACTIVE_ARCH: YES
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
