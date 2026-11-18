@@ -10,14 +10,14 @@ fn invalid() -> ZanryoError {
 
 /// Decode a completed, reconstructed terminal frame, never a concatenated log.
 /// Freshness/refresh completion must be proved by the transport before use.
+///
+/// Only the quota data is anchored: a window label, then `N% used`, then
+/// `Resets …`. The dialog's tabs and key hints are left out on purpose, because
+/// CLI updates change them (2.1.327 replaced `Esc to cancel`) without changing
+/// the data. The transport proves the frame is complete with a quiet period.
 pub fn decode_usage_screen(screen: &str, observed: DateTime<Utc>) -> Result<Vec<RateLimit>> {
     let lines: Vec<_> = screen.lines().map(str::trim).collect();
-    if !lines
-        .iter()
-        .any(|line| line.starts_with("Settings ") && line.contains("Usage"))
-        || !lines.contains(&"Esc to cancel")
-        || screen.contains("Refreshing")
-    {
+    if screen.contains("Refreshing") {
         return Err(invalid());
     }
     let mut limits = Vec::new();
@@ -340,6 +340,30 @@ mod tests {
         assert_eq!(only[0].kind, LimitKind::Fable);
         assert!(decode_usage_screen(&frame("", &(fable.to_owned() + fable)), now()).is_err());
         assert!(decode_usage_screen(&frame("", &fable.replace("18%", "101%")), now()).is_err());
+    }
+    #[test]
+    fn dialog_chrome_changes_do_not_break_the_reading() {
+        // Shape rendered by CLI 2.1.327: session stats instead of a five-hour
+        // window, a new contributions section and a new key hint.
+        let fable = "Current week (Fable)\n0% 0% used\nResets Sep 30 at 7pm (America/Sao_Paulo)\n";
+        let current = format!(
+            "Settings  Status   Config   Usage   Stats\nSession\nEstimated cost: $0.0000\n\
+             Usage: 0 input, 0 output, 0 cache read, 0 cache write\n{}{fable}\
+             What's contributing to your usage?\nApproximate · sessions on this computer only\n\
+             Scanning local sessions…\nUsage credits\nUsage credits are off\n←/→ to switch · Esc to close",
+            week()
+        );
+        let limits = decode_usage_screen(&current, now()).unwrap();
+        assert_eq!(limits.len(), 2);
+        assert_eq!(limits[0].kind, LimitKind::Weekly);
+        assert_eq!(limits[0].remaining_percent, 97.0);
+        assert_eq!(limits[1].kind, LimitKind::Fable);
+        assert_eq!(limits[1].remaining_percent, 100.0);
+        // Tabs and key hints may change or disappear; the data still decodes.
+        let bare = format!("{}{fable}", week());
+        assert_eq!(decode_usage_screen(&bare, now()).unwrap().len(), 2);
+        // Without the data lines nothing is accepted.
+        assert!(decode_usage_screen(&current.replace("3% 3% used", ""), now()).is_err());
     }
     #[test]
     fn bounds_invalid_and_conflicting_percentages_fail_closed() {

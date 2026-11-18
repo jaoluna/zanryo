@@ -41,6 +41,18 @@ else:
     week = now + datetime.timedelta(days=2)
     reset = week.strftime("%b %-d at ") + week.strftime("%-I:%M%p").lower()
     def usage(percent):
+        if mode == "success-2.1.327":
+            # Dialog shape of CLI 2.1.327: session stats instead of a
+            # five-hour window, a Fable window, a contributions section and a
+            # new key hint. The weekly value moves from 3% (cached) to 4%.
+            weekly = percent - 30
+            return ("\x1b[2J\x1b[HSettings  Status   Config   Usage   Stats\n"
+                    "Session\nEstimated cost: $0.0000\n"
+                    f"Current week (all models)\n{weekly}% {weekly}% used\nResets {reset} (UTC)\n"
+                    f"Current week (Fable)\n0% 0% used\nResets {reset} (UTC)\n"
+                    "What's contributing to your usage?\n"
+                    "Approximate · sessions on this computer only\nScanning local sessions…\n"
+                    "Usage credits\nUsage credits are off\n←/→ to switch · Esc to close")
         return ("\x1b[2J\x1b[HSettings  Status   Config   Usage   Stats\n"
                 f"Current session\n{percent}% {percent}% used\nResets {short} (UTC)\n"
                 f"Current week (all models)\n3% 3% used\nResets {reset} (UTC)\n"
