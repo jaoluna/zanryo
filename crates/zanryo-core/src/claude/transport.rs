@@ -209,6 +209,9 @@ fn nonblocking(_: &dyn portable_pty::MasterPty) -> Result<()> {
     ))
 }
 
+/// Quiet time before a usage frame counts as fully painted.
+const FRAME_SETTLED: Duration = Duration::from_secs(1);
+
 fn drive(
     reader: &mut Box<dyn Read + Send>,
     writer: &mut Box<dyn Write + Send>,
@@ -279,6 +282,11 @@ fn drive(
             write_command(writer, b"/usage\r")?;
             requested = true;
         } else if requested && !leaving_dialog {
+            // The dialog has no stable "done" marker across CLI versions, so a
+            // longer quiet period stands in for one before the data is accepted.
+            if last_output.elapsed() < FRAME_SETTLED {
+                continue;
+            }
             if let Ok(limits) = screen.completed(chrono::Utc::now()) {
                 answer = Some(limits);
                 write_command(writer, b"\x1b")?;
@@ -403,16 +411,20 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn failed_probe_releases_slot_for_next_success_without_faking_freshness() {
-        let (_bad_dir, bad) = fake("exit-hang", Duration::from_millis(1400));
+        // Long enough to pass the prompt, the settled frame and `/exit`, so
+        // the failure is the hung exit and not an earlier timeout.
+        let (_bad_dir, bad) = fake("exit-hang", Duration::from_secs(4));
         let (_good_dir, good) = fake("success", SUCCESS_TIMEOUT);
         let state = Arc::new(ProbeProcessState::default());
         let started = Instant::now();
+        let error = ClaudeUsageProbe::with_process_state(bad.config, Arc::clone(&state))
+            .read()
+            .unwrap_err();
         assert!(
-            ClaudeUsageProbe::with_process_state(bad.config, Arc::clone(&state))
-                .read()
-                .is_err()
+            error.to_string().contains("did not finish exiting"),
+            "{error}"
         );
-        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(started.elapsed() < Duration::from_secs(6));
         assert!(state.pending.lock().unwrap().is_none());
         assert_eq!(
             ClaudeUsageProbe::with_process_state(good.config, state)
@@ -462,12 +474,25 @@ mod tests {
     }
     #[test]
     #[cfg(unix)]
+    fn offline_pty_reads_the_2_1_327_dialog() {
+        let (_directory, probe) = fake("success-2.1.327", SUCCESS_TIMEOUT);
+        let result = probe.read().unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].kind, crate::LimitKind::Weekly);
+        assert_eq!(result[0].remaining_percent, 96.0);
+        assert_eq!(result[1].kind, crate::LimitKind::Fable);
+        assert_eq!(result[1].remaining_percent, 100.0);
+    }
+    #[test]
+    #[cfg(unix)]
     fn offline_pty_cache_auth_error_and_hung_child_fail_closed_and_exit() {
+        // Longer than the prompt wait plus the settled-frame wait, so a cached
+        // frame is rejected on its merits and not only by the deadline.
         for mode in ["cache", "auth", "failure", "timeout"] {
-            let (_directory, probe) = fake(mode, Duration::from_millis(900));
+            let (_directory, probe) = fake(mode, Duration::from_millis(2500));
             let start = Instant::now();
             assert!(probe.read().is_err(), "{mode}");
-            assert!(start.elapsed() < Duration::from_secs(3), "{mode}");
+            assert!(start.elapsed() < Duration::from_secs(4), "{mode}");
         }
     }
     #[test]
